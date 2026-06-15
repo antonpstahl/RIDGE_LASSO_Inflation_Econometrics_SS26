@@ -20,20 +20,36 @@ against the naive baseline.
 ## Project structure
 
 ```
-RIDGE_LASSO_Inflation_Econometrics_SS26/
-├── README.md                  This file (English)
-├── README_DE.md               German version
-├── requirements.txt           Pinned dependencies
+RIDGE-LASSO-Inflation-Econometrics-SS26/
+├── README.md                    This file (English)
+├── README_DE.md                 German version
+├── requirements.txt             Pinned dependencies
+├── docs/
+│   └── Vorgehensplan_Seminararbeit_Oekonometrie.pdf  Original project plan (German)
 ├── notebooks/
-│   └── LASSO_Ridge_Inflationsprognose.ipynb   Self-contained main analysis (with outputs)
+│   └── LASSO_Ridge_Inflationsprognose.ipynb   Main analysis notebook (with outputs)
+├── src/                         Python package — reusable pipeline modules
+│   ├── __init__.py
+│   ├── config.py                Paths, seeds, hyperparameter grids, CV objects
+│   ├── data_preparation.py      Data download (ECB/Eurostat API + CSV cache)
+│   ├── data_preprocessing.py    YoY transformation, lag feature engineering
+│   ├── evaluation.py            OOS evaluation, rolling-origin, DM test, horizon analysis
+│   ├── models.py                Model definitions (OLS, Ridge, LASSO, Elastic Net, AR)
+│   ├── pipeline.py              End-to-end orchestration via run_all()
+│   ├── reporting.py             Figure generation (fig_01–fig_13) + table export
+│   └── training.py              Model fitting and cross-validation
+├── tests/
+│   ├── test_data_preprocessing.py
+│   ├── test_evaluation.py
+│   └── test_models.py
 ├── data/
-│   ├── raw/data_raw.csv        Raw data (index/rate values)
-│   └── processed/data_yoy.csv  YoY-transformed data
-├── results/
-│   ├── results_table.csv       Model comparison (MSE/RMSE/R², incl. benchmarks)
-│   ├── horizons_table.csv      RMSE by forecast horizon h ∈ {1,3,6,12}
-│   ├── sources_table.csv       Data sources (variable → ECB/Eurostat code)
-│   └── figures/                fig_01 … fig_13 (PNG)
+│   ├── raw/data_raw.csv         Raw data (index/rate values, cached)
+│   └── processed/data_yoy.csv   YoY-transformed data
+└── results/
+    ├── results_table.csv/.tex   Model comparison (MSE/RMSE/R², incl. benchmarks)
+    ├── horizons_table.csv/.tex  RMSE by forecast horizon h ∈ {1,3,6,12}
+    ├── sources_table.csv/.tex   Data sources (variable → ECB/Eurostat code)
+    └── figures/                 fig_01_hvpi_zeitreihe.png … fig_13_horizonte_rmse.png
 ```
 
 ## Data sources
@@ -56,19 +72,24 @@ RIDGE_LASSO_Inflation_Econometrics_SS26/
 
 ## Reproduction
 
-The notebook is **self-contained** — data download, YoY transformation and lag features are all
-included (no separate Python module required). Data are cached in `data/raw/data_raw.csv`; only
-on the first run (or with `get_raw_data(use_cache=False)`) will data be fetched from ECB + Eurostat.
+Data are cached in `data/raw/data_raw.csv`; only on the first run (or with
+`use_cache=False`) will data be fetched from ECB + Eurostat.
 
 ```bash
 pip install -r requirements.txt
 
-# Execute notebook (uses data cache, writes figures to results/figures/)
+# Option A — run the full pipeline as a Python script
+python -c "from src.pipeline import run_all; run_all()"
+
+# Option B — execute notebook (writes figures to results/figures/)
 jupyter nbconvert --to notebook --execute --inplace \
     notebooks/LASSO_Ridge_Inflationsprognose.ipynb
+
+# Run tests
+pytest tests/
 ```
 
-Or simply open interactively in Jupyter / VS Code and run all cells.
+Or open the notebook interactively in Jupyter / VS Code and run all cells.
 The committed notebook already contains the outputs of the last run; figures are also
 available as PNGs in `results/figures/`.
 
