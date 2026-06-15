@@ -25,7 +25,6 @@ RIDGE_LASSO_Inflation_Econometrics_SS26/
 ├── requirements.txt           Gepinnte Abhängigkeiten
 ├── notebooks/
 │   └── LASSO_Ridge_Inflationsprognose.ipynb   Eigenständige Hauptanalyse (mit Outputs)
-├── IMPLEMENTIERUNGSPLAN.md    Methodik-, Korrektur- und Schreibfahrplan
 ├── data/
 │   ├── raw/data_raw.csv        Rohdaten (Index-/Quotenwerte)
 │   └── processed/data_yoy.csv  YoY-transformierte Daten
