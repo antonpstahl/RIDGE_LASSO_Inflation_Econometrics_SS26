@@ -116,6 +116,7 @@ sortiert nach Güte (DM = Diebold-Mariano-Test vs. Random Walk; n.s. = nicht sig
 | OLS | –                    | 3.40 | 3.62 | −0.40 |  ** | 155 / 155 |
 
 DM-Test (HLN-korrigiert, T=36): Kein Modell schlägt den RW signifikant (geringe Power bei T=36). Block-Bootstrap-KI je Modell: siehe `results/inference_table.csv`.
+*Hinweis: Der RW-R² spiegelt die Persistenz der YoY-Rate wider (ŷ_t = y_{t−1} erklärt die Autokorrelation); er ist nicht mit dem Modell-R² gleichzusetzen.*
 
 **Robustheitscheck (Rolling-Origin, Expanding Window):** RW 0.94 · AR 0.95 · LASSO+HVPI 0.95 ·
 LASSO 1.09 · Elastic Net 1.09 · Ridge 1.16 · OLS 2.34. Die adaptiven Modelle (AR, LASSO+HVPI)

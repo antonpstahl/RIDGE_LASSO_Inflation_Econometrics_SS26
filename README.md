@@ -114,6 +114,7 @@ sorted by performance (DM = Diebold-Mariano test vs. random walk; n.s. = not sig
 | OLS | –                    | 3.40 | 3.62 | −0.40 |  ** | 155 / 155 |
 
 DM test (HLN-corrected, T=36): no model beats the RW significantly (low power at T=36). Block-bootstrap CIs per model: see `results/inference_table.csv`.
+*Note: The RW R² reflects the persistence (autocorrelation) of the YoY series (ŷ_t = y_{t−1}); it is not comparable to the model R².*
 
 **Robustness check (Rolling-Origin, expanding window):** RW 0.94 · AR 0.95 · LASSO+HICP 0.95 ·
 LASSO 1.09 · Elastic Net 1.09 · Ridge 1.16 · OLS 2.34. The adaptive models (AR, LASSO+HICP)

@@ -404,7 +404,7 @@ def compute_horizon_analysis(df_yoy, tscv=None):
 
     from sklearn.linear_model import ElasticNetCV, LassoCV, LinearRegression, RidgeCV
 
-    # Lade vorherige Tabelle für Vorher/Nachher-Vergleich (Robustheitsnachweis AP17)
+    # Lade vorherige Horizont-Tabelle für Vorher/Nachher-Vergleich (Embargo-Effekt)
     _prev_path = pathlib.Path("results/horizons_table.csv")
     df_prev = pd.read_csv(_prev_path, index_col=0) if _prev_path.exists() else None
     if df_prev is not None:
@@ -474,16 +474,16 @@ def compute_horizon_analysis(df_yoy, tscv=None):
 
     df_horizons = pd.DataFrame(horizon_records).set_index("Horizont h")
 
-    # h=12-Degeneration dokumentieren (G4)
+    # Degeneration bei langen Horizonten: LASSO/EN kann 0 Variablen selektieren
     for rec in horizon_records:
         if rec["LASSO Sel."] == 0 or rec["EN Sel."] == 0:
             h_deg = rec["Horizont h"]
-            print(f"\nBEFUND (G4): Bei h={h_deg} selektiert LASSO {rec['LASSO Sel.']} und "
+            print(f"\nBEFUND: Bei h={h_deg} selektiert LASSO {rec['LASSO Sel.']} und "
                   f"Elastic Net {rec['EN Sel.']} Variablen (reiner Intercept).")
             print("Interpretation: Kein ausnutzbares Makro-Signal auf Jahreshorizont "
                   "(λ-Pfad bevorzugt Nulllösung). RMSE identisch → Befund, kein Bug.")
 
-    # RMSE-Differenz Embargo vs. ohne Embargo (Robustheitsnachweis AP17)
+    # RMSE-Differenz Embargo-CV vs. ohne Embargo
     if df_prev is not None:
         print("\nRMSE-Differenz Embargo-CV vs. ohne Embargo (positive Δ = Embargo erhöht RMSE):")
         print(f"  {'h':>3}  {'ΔLASSO':>9}  {'ΔRidge':>9}  {'ΔEN':>9}  Anmerkung")
