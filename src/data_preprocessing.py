@@ -26,9 +26,17 @@ def build_feature_matrix(df_yoy, lags=None, target_col="HVPI",
     X = pd.concat(frames, axis=1)
     y = df_yoy[target_col]
 
-    # NaN-Filter nur auf Train-Anteil, um Leakage aus Test-Missingness zu vermeiden
-    train_end_approx = len(X) - test_months
-    nan_frac = X.iloc[:train_end_approx].isna().mean()
+    # NaN-Filter: Spalten mit >20% NaN im Trainingsfenster ausschließen.
+    # Die Testgrenze wird im post-dropna-Indexraum bestimmt (nicht im pre-dropna-
+    # Indexraum), weil der pre-dropna-Frame NaN-Zeilen am Ende enthält (Prädiktoren
+    # ohne aktuellste Daten), die len(X) - test_months um mehrere Monate in das
+    # echte Testfenster verschieben würden. So enthält das Filterfenster 0 Testmonate.
+    combined_pre = pd.concat([X, y], axis=1).dropna()
+    if len(combined_pre) > test_months:
+        train_cutoff = combined_pre.index[-test_months - 1]
+        nan_frac = X.loc[X.index <= train_cutoff].isna().mean()
+    else:
+        nan_frac = X.isna().mean()
     X = X.loc[:, nan_frac <= 0.20]
 
     combined = pd.concat([X, y], axis=1).dropna()

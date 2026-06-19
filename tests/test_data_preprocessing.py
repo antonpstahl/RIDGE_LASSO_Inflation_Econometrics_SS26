@@ -84,12 +84,44 @@ def test_scaler_train_std(yoy_and_features):
     assert std_max < 1e-10, f"Skalierungsfehler: max |std-1| = {std_max:.2e}"
 
 
-def test_nan_filter_only_on_train(synthetic_df):
-    """NaN-Filter darf keine Testdaten berücksichtigen (kein Missingness-Leak)."""
-    df_yoy = transform_to_yoy(synthetic_df)
-    # Test: build_feature_matrix akzeptiert test_months-Parameter
-    X24, y24 = build_feature_matrix(df_yoy, lags=[1], forecast_horizon=1, test_months=24)
-    X48, y48 = build_feature_matrix(df_yoy, lags=[1], forecast_horizon=1, test_months=48)
-    # Die Spaltenauswahl kann differieren, aber kein Fehler
-    assert X24.shape[0] > 0
-    assert X48.shape[0] > 0
+def test_nan_filter_only_on_train():
+    """NaN-Filter darf Testmonate nicht als Missingness-Kriterium einbeziehen.
+
+    Konstruiert eine Spalte B (Canary), die ausschließlich im echten Testfenster
+    (post-dropna letzte test_months Zeilen) NaN aufweist.  Der pre-dropna-Frame
+    enthält NaN-Zeilen am Ende (Spalte A endet früher) → len(X)-test_months
+    landet zu spät → der Canary-NaN-Block liegt im alten Filterfenster.
+
+    Buggy:  B_L1-NaN-Anteil im pre-dropna-Fenster ≈ 21 % > 20 % → B wird
+            gefiltert; assert schlägt fehl.
+    Korrekt: B_L1-NaN-Anteil im echten Trainingsfenster ≈  4 % < 20 % → B bleibt.
+    """
+    np.random.seed(1)
+    n            = 60
+    test_months_t = 12
+    idx          = pd.date_range("2000-01", periods=n, freq="MS")
+
+    # A: NaN for last 10 rows → pre-dropna frame has 10 trailing NaN rows,
+    #    so len(X)-12 = 48 includes rows 38-47, which overlap the canary NaN block.
+    a_vals = np.concatenate([np.random.randn(50), np.full(10, np.nan)])
+
+    # B (canary): NaN for rows 38-49 (12 rows = the actual post-dropna test period).
+    # In old filter (rows 0-47): rows 0+39..47 → 10 NaN / 48 rows ≈ 20.8 % → excluded.
+    # In new filter (rows 0-26, true training): row 0 only → 1/27 ≈  3.7 % → kept.
+    b_vals = np.concatenate([
+        np.random.randn(38),
+        np.full(12, np.nan),
+        np.random.randn(10),
+    ])
+
+    df = pd.DataFrame(
+        {"HVPI": np.random.randn(n), "A": a_vals, "B": b_vals}, index=idx
+    )
+
+    X, y = build_feature_matrix(df, lags=[1], forecast_horizon=1,
+                                test_months=test_months_t)
+
+    assert any("B" in col for col in X.columns), (
+        "Column B must not be filtered out: its NaN lies only in the test period. "
+        "The NaN-filter must use the post-dropna training boundary, not len(X)-test_months."
+    )
