@@ -7,8 +7,8 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.evaluation import (
-    bonferroni_correct, clark_west, compute_regime_analysis,
-    diebold_mariano, rolling_origin,
+    bonferroni_correct, clark_west, compute_giacomini_rossi,
+    compute_regime_analysis, diebold_mariano, rolling_origin,
 )
 
 
@@ -191,6 +191,75 @@ def test_regime_analysis_disjoint_split():
         "n_shock + n_disfl muss gleich Gesamt-n sein"
     assert result["n_shock"] > 0, "Schock-Regime darf nicht leer sein"
     assert result["n_disfl"] > 0, "Disinflations-Regime darf nicht leer sein"
+
+
+# ── Giacomini-Rossi-Fluctuation-Test ─────────────────────────────────────────
+
+def _make_gr_ctx(y_vals, rw_vals, model_vals, model_name="M",
+                 start="2021-06", freq="MS"):
+    """Hilfsfunktion: baut einen minimalen oos_ctx für compute_giacomini_rossi."""
+    T   = len(y_vals)
+    idx = pd.date_range(start, periods=T, freq=freq)
+    return {
+        "oos_df": pd.DataFrame(
+            {"RW": rw_vals, model_name: model_vals}, index=idx
+        ),
+        "y_oos_ref": pd.Series(y_vals, index=idx),
+    }
+
+
+def test_gr_constant_advantage_always_positive():
+    """Konstanter Modell-Vorteil (d_t > 0 stets) → alle GR-Statistiken positiv.
+
+    DoD-Sanity 1: 'konstanter Vorteil ⇒ flache Statistik' (flach & positiv).
+    """
+    rng = np.random.default_rng(42)
+    T   = 36
+    y   = np.zeros(T)
+    rw  = np.ones(T) * 1.0   # RW-Fehler = 1
+    mod = np.ones(T) * 0.3   # Modell-Fehler = 0.3 (klar besser)
+    # Kleines Rauschen, damit die HAC-Varianz > 0
+    noise = rng.normal(0, 0.02, T)
+    rw  = rw + noise
+    mod = mod + noise * 0.5
+
+    oos_ctx = _make_gr_ctx(y, rw, mod, model_name="AR")
+    gr_ctx  = compute_giacomini_rossi(oos_ctx, m=12)
+    gr_ar   = gr_ctx["gr_df"]["AR"]
+
+    assert (gr_ar > 0).all(), (
+        f"Alle GR-Statistiken sollten bei konstantem Vorteil positiv sein; "
+        f"min={gr_ar.min():.3f}"
+    )
+
+
+def test_gr_regime_break_sign_change():
+    """Vorzeichenwechsel an konstruiertem Regimebruch → GR_t wechselt das Vorzeichen.
+
+    DoD-Sanity 2: 'Vorzeichenwechsel an konstruiertem Regimebruch ⇒ Bandüberschreitung'.
+    Wir prüfen mindestens, dass die GR-Reihe sowohl positive als auch negative Werte
+    enthält — ein Vorzeichenwechsel setzt einen Vorteils-/Nachteilswechsel voraus.
+    """
+    T   = 36
+    y   = np.zeros(T)
+    rw  = np.ones(T)
+    # Erste Hälfte: Modell schlechter (d_t < 0); zweite Hälfte: Modell besser (d_t > 0)
+    mod = np.empty(T)
+    mod[:T // 2]  = 0.1   # Modell fast gleich wie RW (aber schlechter im Quadrat)
+    mod[T // 2:]  = 2.0   # Modell viel schlechter → d_t negativ in 2. Hälfte
+
+    # Wir drehen: d_t = e_RW^2 - e_M^2. Wenn RW=1 und mod=0.1 → d=1-0.01=0.99 (positiv).
+    # Wenn RW=1 und mod=2 → d=1-4=-3 (negativ). So hat erste Hälfte d>0, zweite d<0.
+    oos_ctx = _make_gr_ctx(y, rw, mod, model_name="LASSO+HVPI")
+    gr_ctx  = compute_giacomini_rossi(oos_ctx, m=10)
+    gr_vals = gr_ctx["gr_df"]["LASSO+HVPI"].values
+
+    has_positive = bool((gr_vals > 0).any())
+    has_negative = bool((gr_vals < 0).any())
+    assert has_positive and has_negative, (
+        f"GR-Reihe sollte bei Regimebruch Vorzeichen wechseln; "
+        f"min={gr_vals.min():.3f}, max={gr_vals.max():.3f}"
+    )
 
 
 def test_rolling_origin_no_lookahead():

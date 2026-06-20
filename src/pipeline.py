@@ -6,6 +6,7 @@ from .evaluation import (
     compute_adaptive_oos,
     compute_compare_oos,
     compute_dm_tests,
+    compute_giacomini_rossi,
     compute_horizon_analysis,
     compute_oos_predictions,
     compute_regime_analysis,
@@ -13,6 +14,7 @@ from .evaluation import (
     compute_single_split_inference,
 )
 from .reporting import (
+    export_gr_table,
     export_horizons_table,
     export_inference_table,
     export_regime_table,
@@ -32,6 +34,7 @@ from .reporting import (
     fig_11_rolling_rmse,
     fig_12_selection_stability,
     fig_13_horizons,
+    fig_14_giacomini_rossi,
     print_summary,
     update_readmes,
 )
@@ -99,6 +102,10 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=True,
 
     reg_ctx = compute_regime_analysis(oos_ctx)
     dm_ctx  = compute_dm_tests(oos_ctx)
+    gr_ctx  = compute_giacomini_rossi(
+        oos_ctx,
+        adap_ctx=adap_ctx if adaptive_rolling else None,
+    )
     sel_ctx = compute_selection_stability(X, y, train_end, models_ctx["lambda_lasso"])
     hor_ctx = compute_horizon_analysis(df_yoy, tscv=config.TSCV)
 
@@ -114,6 +121,7 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=True,
         **compare_ctx,
         **reg_ctx,
         **dm_ctx,
+        **gr_ctx,
         **sel_ctx,
         **hor_ctx,
     }
@@ -141,6 +149,7 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=True,
         fig_12_selection_stability(sel_ctx["sel_freq"], sel_ctx["n_windows"],
                                    models_ctx["lambda_lasso"])
         fig_13_horizons(hor_ctx["df_horizons"])
+        fig_14_giacomini_rossi(gr_ctx)
 
     print_summary(ctx)
     export_results_table(models_ctx["results"], splits["y_test"])
@@ -153,6 +162,7 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=True,
         n_disfl=reg_ctx["n_disfl"],
     )
     export_sources_table()
+    export_gr_table(gr_ctx)
     update_readmes(ctx)
 
     return ctx

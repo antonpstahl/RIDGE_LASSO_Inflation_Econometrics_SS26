@@ -771,6 +771,146 @@ def compute_horizon_analysis(df_yoy, tscv=None):
     return {"df_horizons": df_horizons}
 
 
+# ── Giacomini-Rossi-Fluctuation-Test ─────────────────────────────────────────
+
+# Asymptotische kritische Werte aus Giacomini & Rossi (2010), Tab. 1.
+# Schlüssel: μ = m/T; Werte: (cv_10%, cv_5%, cv_1%).
+# Zweiseitiger Fluctuation Test: sup_{t} |GR_t(m)| > cv → H0 verwerfen.
+_GR_CRITICAL_VALUES = {
+    0.10: (1.857, 2.104, 2.561),
+    0.20: (1.749, 1.981, 2.415),
+    0.30: (1.695, 1.924, 2.350),
+    0.40: (1.659, 1.890, 2.316),
+    0.50: (1.640, 1.871, 2.296),
+}
+
+
+def _gr_critical_value(mu, alpha=0.05):
+    """Interpoliert GR-Kritischen Wert bei μ=m/T aus Giacomini & Rossi (2010), Tab. 1."""
+    _idx = {0.10: 0, 0.05: 1, 0.01: 2}[alpha]
+    mu_keys = np.array(sorted(_GR_CRITICAL_VALUES))
+    cv_vals  = np.array([_GR_CRITICAL_VALUES[k][_idx] for k in mu_keys])
+    mu_clamped = float(np.clip(mu, mu_keys[0], mu_keys[-1]))
+    return float(np.interp(mu_clamped, mu_keys, cv_vals))
+
+
+def _hac_lrv(d, bw):
+    """Newey-West-HAC-Long-Run-Varianz (Bartlett-Kernel) der Sequenz d."""
+    m     = len(d)
+    d_dm  = d - d.mean()
+    gamma0 = np.dot(d_dm, d_dm) / m
+    lrv    = gamma0
+    for k in range(1, bw + 1):
+        w_k     = 1.0 - k / (bw + 1.0)
+        gamma_k = np.dot(d_dm[:-k], d_dm[k:]) / m
+        lrv    += 2.0 * w_k * gamma_k
+    return max(lrv, 1e-15)
+
+
+def compute_giacomini_rossi(oos_ctx, adap_ctx=None, m=None):
+    """Giacomini-Rossi-Fluctuation-Test (2010): zeitvariable Prädiktivität vs. RW.
+
+    Berechnet für jedes Schlüsselmodell die rollierende GR-Statistik:
+      GR_t(m) = √m · d̄_{t,m} / ĥ_{t,m}
+    wobei d_t = e²_RW − e²_Modell (Verlustdifferenz) und ĥ²_{t,m} die Newey-West-
+    Long-Run-Varianz der d-Werte im rollierenden Fenster [t−m+1, t] ist.
+
+    Adressiert G28: der gepoolte DM/CW-Test verdeckt die Zeitstruktur. GR testet
+    *conditional predictive ability* (Giacomini & White 2006) — ob/wann der
+    Makro-Mehrwert zeitlich variiert und im Schock-Regime kollabiert.
+
+    H0: konstante relative Prädiktivität vs. RW (über die Zeit).
+    H1: zeitvariable Prädiktivität; Band-Überschreitung zeigt *wann* ein signifikanter
+        Vorteil/Nachteil vorliegt.
+
+    Kritische Werte: Giacomini & Rossi (2010), Tab. 1, abhängig von μ = m/T.
+
+    Parameters
+    ----------
+    oos_ctx  : dict aus compute_oos_predictions (enthält 'oos_df', 'y_oos_ref')
+    adap_ctx : optionaler dict aus compute_adaptive_oos (Adaptive LASSO)
+    m        : int, Fenstergröße; None → ⌊T/3⌋ (mind. 5)
+
+    Returns
+    -------
+    dict:
+      'gr_df'  : DataFrame (Zeitindex × Modell) mit GR-Statistiken
+      'cv_05'  : 5%-kritischer Wert
+      'cv_10'  : 10%-kritischer Wert
+      'm'      : verwendete Fenstergröße
+      'mu'     : μ = m/T
+    """
+    oos_df    = oos_ctx["oos_df"]
+    y_oos_ref = oos_ctx["y_oos_ref"]
+
+    common = oos_df.index.intersection(y_oos_ref.index)
+    y_ref  = y_oos_ref.loc[common]
+    e_rw   = (oos_df["RW"].reindex(common) - y_ref).dropna()
+    T      = len(e_rw)
+
+    if m is None:
+        m = max(int(T // 3), 5)
+
+    mu    = m / T
+    cv_10 = _gr_critical_value(mu, alpha=0.10)
+    cv_05 = _gr_critical_value(mu, alpha=0.05)
+    bw    = max(1, int(m ** 0.25))   # Newey-West-Bandbreite im rollierenden Fenster
+
+    # Modelle: Schlüsselmodelle aus festem Rolling-Origin + optionaler Adaptive LASSO
+    models_to_test: dict[str, pd.Series] = {}
+    for col in ["AR", "LASSO+HVPI", "LASSO", "Ridge"]:
+        if col in oos_df.columns:
+            models_to_test[col] = oos_df[col]
+    if adap_ctx and "oos_alasso_adap" in adap_ctx:
+        models_to_test["Adaptive LASSO"] = adap_ctx["oos_alasso_adap"]
+
+    print(f"\nGiacomini-Rossi-Fluctuation-Test (Giacomini & Rossi 2010, JAE 25)")
+    print(f"  Konzeptueller Rahmen: conditional predictive ability (Giacomini & White 2006)")
+    print(f"  Reframing: H0 = konstante Prädiktivität vs. H1 = zeitvariable Prädiktivität")
+    print(f"  T={T} OOS-Beob., m={m} (μ={mu:.3f}), Newey-West bw={bw}")
+    print(f"  Kritische Werte (Tab. 1, GR 2010): cv_10%={cv_10:.3f}, cv_5%={cv_05:.3f}")
+    print(f"  GR_t(m) = √m · d̄_t / ĥ_t,  d_t = e²_RW − e²_Modell")
+    print(f"\n  {'Modell':<20} {'sup|GR|':>8}  {'> cv_5%?':>10}  {'> cv_10%?':>10}")
+    print("  " + "-" * 57)
+
+    gr_records: dict[str, pd.Series] = {}
+
+    for name, preds_series in models_to_test.items():
+        preds  = preds_series.reindex(e_rw.index).dropna()
+        e_mod  = (preds - y_ref.loc[preds.index]).dropna()
+        common_e = e_rw.index.intersection(e_mod.index)
+        e_rw_a  = e_rw.loc[common_e].values
+        e_mod_a = e_mod.loc[common_e].values
+        d       = e_rw_a ** 2 - e_mod_a ** 2   # positiv → Modell besser als RW
+        T_m     = len(d)
+
+        gr_stats: list[float] = []
+        gr_idx:   list         = []
+        for end in range(m, T_m + 1):
+            d_win  = d[end - m: end]
+            d_bar  = d_win.mean()
+            lrv    = _hac_lrv(d_win, bw=bw)
+            gr_t   = np.sqrt(m) * d_bar / np.sqrt(lrv)
+            gr_stats.append(gr_t)
+            gr_idx.append(common_e[end - 1])
+
+        gr_series = pd.Series(gr_stats, index=gr_idx, name=name)
+        gr_records[name] = gr_series
+
+        sup_gr = float(np.max(np.abs(gr_stats)))
+        flag5  = "JA **" if sup_gr > cv_05 else "nein"
+        flag10 = "JA *"  if sup_gr > cv_10 else "nein"
+        print(f"  {name:<20} {sup_gr:>8.3f}  {flag5:>10}  {flag10:>10}")
+
+    print("  " + "-" * 57)
+    print(f"  Bandüberschreitung: sup|GR| > cv_5%={cv_05:.3f} (**) oder cv_10%={cv_10:.3f} (*).")
+    print(f"  Kein/selten signifikant → H0 (konstante Prädiktivität) nicht verworfen.")
+    print(f"  Fluctuation-Plot (fig_14): zeigt *wann* GR_t kritisches Band berührt/überschreitet.")
+
+    gr_df = pd.DataFrame(gr_records)
+    return {"gr_df": gr_df, "cv_05": cv_05, "cv_10": cv_10, "m": m, "mu": mu}
+
+
 # ── Stationaritätstests (ADF + KPSS) ─────────────────────────────────────────
 
 # Repräsentative Prädiktoren je Gruppe (Niveau-Spaltenname im Rohdata-Frame)

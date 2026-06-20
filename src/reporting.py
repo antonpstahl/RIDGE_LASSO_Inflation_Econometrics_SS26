@@ -620,6 +620,84 @@ def export_sources_table():
     print(df_sources.to_string(index=False))
 
 
+def fig_14_giacomini_rossi(gr_ctx, shock_end=None):
+    """Giacomini-Rossi-Fluctuation-Plot: rollierende GR_t(m)-Statistik vs. Zeit.
+
+    Zeigt für Schlüsselmodelle, *wann* die relative Prädiktivität vs. RW positiv
+    (Modell besser) oder negativ (Modell schlechter) ist und ob das kritische Band
+    überschritten wird. Ergänzt den gepoolten DM/CW-Test um die Zeitdimension.
+
+    Quelle: Giacomini & Rossi (2010), Tab. 1; Giacomini & White (2006).
+    """
+    from .config import REGIME_SHOCK_END
+
+    gr_df  = gr_ctx["gr_df"]
+    cv_05  = gr_ctx["cv_05"]
+    cv_10  = gr_ctx["cv_10"]
+    m      = gr_ctx["m"]
+    mu     = gr_ctx["mu"]
+    if shock_end is None:
+        shock_end = REGIME_SHOCK_END
+
+    # Priorität: AR und LASSO+HVPI zuerst (geschachtelte Grenzfälle), dann andere
+    priority = ["AR", "LASSO+HVPI", "Adaptive LASSO", "LASSO", "Ridge"]
+    cols     = [c for c in priority if c in gr_df.columns][:4]
+
+    _col_map = {
+        "AR":             "#795548",
+        "LASSO+HVPI":     "#9C27B0",
+        "Adaptive LASSO": "#FF5722",
+        "LASSO":          "#4CAF50",
+        "Ridge":          "#FF9800",
+    }
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    # Kritische Bänder
+    ax.axhline( cv_05, color="red",    linestyle="--", linewidth=1.3, alpha=0.85,
+                label=f"+{cv_05:.3f} / −{cv_05:.3f}  (5%-krit., GR 2010, μ={mu:.2f})")
+    ax.axhline(-cv_05, color="red",    linestyle="--", linewidth=1.3, alpha=0.85)
+    ax.axhline( cv_10, color="darkorange", linestyle=":",  linewidth=1.0, alpha=0.7,
+                label=f"+{cv_10:.3f} / −{cv_10:.3f}  (10%-krit.)")
+    ax.axhline(-cv_10, color="darkorange", linestyle=":",  linewidth=1.0, alpha=0.7)
+    ax.axhline(0, color="gray", linewidth=0.9, linestyle="-", alpha=0.4)
+
+    # Regime-Trennung
+    shock_ts = pd.Timestamp(shock_end)
+    ax.axvline(shock_ts, color="#555", linestyle="--", linewidth=1.1, alpha=0.7,
+               label=f"Regime-Trennung ({shock_end}): Schock → Disinflation")
+
+    # GR-Statistiken je Modell
+    for col in cols:
+        series = gr_df[col].dropna()
+        ax.plot(series.index, series.values,
+                label=col, color=_col_map.get(col, "black"),
+                linewidth=1.8, marker="o", markersize=3.5, alpha=0.9)
+
+    ax.set_title(
+        f"Giacomini-Rossi-Fluctuation-Test: zeitvariable Prädiktivität vs. Random Walk\n"
+        f"(rollierende DM-Statistik, Fenster m={m}, μ={mu:.2f}; "
+        f"GR_t>0: Modell besser als RW; krit. Werte: Giacomini & Rossi 2010, Tab. 1)"
+    )
+    ax.set_xlabel("Datum (Ende des rollierenden Fensters)")
+    ax.set_ylabel("GR-Statistik  GR_t(m)")
+    ax.legend(fontsize=9, loc="upper left")
+    plt.tight_layout()
+    _save("fig_14_giacomini_rossi.png")
+    plt.show()
+    print("Abbildung gespeichert: fig_14_giacomini_rossi.png")
+
+
+def export_gr_table(gr_ctx):
+    """Exportiert GR-Fluctuation-Statistiken je Modell als CSV."""
+    gr_df = gr_ctx["gr_df"]
+    gr_df.to_csv("results/gr_table.csv")
+    print(f"results/gr_table.csv gespeichert. "
+          f"({len(gr_df)} Zeitpunkte, m={gr_ctx['m']}, μ={gr_ctx['mu']:.3f})")
+    print(f"  cv_5%={gr_ctx['cv_05']:.3f}, cv_10%={gr_ctx['cv_10']:.3f} "
+          f"(Giacomini & Rossi 2010, Tab. 1)")
+
+
 def export_regime_table(df_regime, shock_end="2023-03", n_shock=None, n_disfl=None):
     """Exportiert Regime-Tabelle (Schock vs. Disinflation) nach results/regime_table.{csv,tex}."""
     df_regime.to_csv("results/regime_table.csv")
