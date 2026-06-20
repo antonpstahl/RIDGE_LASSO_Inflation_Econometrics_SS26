@@ -6,7 +6,7 @@ import pytest
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.evaluation import diebold_mariano, rolling_origin
+from src.evaluation import clark_west, diebold_mariano, rolling_origin
 
 
 # ── Diebold-Mariano ───────────────────────────────────────────────────────────
@@ -45,6 +45,51 @@ def test_dm_p_value_range():
     e2 = np.linspace(-2, 2, 36)
     _, pv = diebold_mariano(e1, e2, h=1)
     assert 0.0 <= pv <= 1.0
+
+
+# ── Clark-West ────────────────────────────────────────────────────────────────
+
+def test_cw_perfect_nested_model():
+    """Perfektes geschachteltes Modell (e_mod=0) → CW-Stat positiv, p-Wert in [0,1]."""
+    np.random.seed(10)
+    e_rw  = np.random.randn(36)
+    e_mod = np.zeros(36)
+    cw, pv = clark_west(e_rw, e_mod, h=1)
+    assert cw > 0, f"CW-Stat sollte positiv sein bei perfektem Modell, got {cw}"
+    assert 0.0 <= pv <= 1.0, f"p-Wert ausserhalb [0,1]: {pv}"
+
+
+def test_cw_equal_errors_zero_stat():
+    """Wenn nested Modell = RW (e_mod = e_rw), dann f_t = 0 fuer alle t → CW ≈ 0."""
+    np.random.seed(11)
+    e_rw = np.random.randn(36)
+    cw, pv = clark_west(e_rw, e_rw, h=1)
+    assert abs(cw) < 1e-10, f"CW sollte 0 sein bei gleichen Fehlern, got {cw}"
+
+
+def test_cw_p_value_one_sided():
+    """CW p-Wert ist einseitig: fuer positiven CW-Stat ist p < 0.5."""
+    np.random.seed(12)
+    e_rw  = np.random.randn(100) * 2.0   # groessere RW-Fehler
+    e_mod = np.random.randn(100) * 0.5   # kleinere Modellfehler
+    cw, pv = clark_west(e_rw, e_mod, h=1)
+    assert cw > 0, "CW-Stat sollte positiv sein wenn Modell klar besser"
+    assert 0.0 <= pv < 0.5, f"Einseitiger p-Wert bei positivem CW sollte < 0.5 sein, got {pv}"
+
+
+def test_cw_adjustment_exceeds_dm_numerator():
+    """CW-Numerator (mean f_t^CW) ist >= DM-Numerator (mean f_t^DM).
+
+    f_t^CW = f_t^DM + (e_mod - e_rw)^2  => mean(f^CW) >= mean(f^DM).
+    """
+    np.random.seed(13)
+    e_rw  = np.random.randn(50)
+    e_mod = np.random.randn(50)
+    f_dm  = e_rw**2 - e_mod**2
+    f_cw  = e_rw**2 - (e_mod**2 - (e_mod - e_rw)**2)
+    assert f_cw.mean() >= f_dm.mean() - 1e-12, (
+        f"CW-Numerator {f_cw.mean():.6f} sollte >= DM-Numerator {f_dm.mean():.6f}"
+    )
 
 
 # ── Rolling-Origin ────────────────────────────────────────────────────────────

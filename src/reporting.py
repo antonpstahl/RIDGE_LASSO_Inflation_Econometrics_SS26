@@ -501,7 +501,7 @@ def export_stationarity_table(df_stationarity):
 
 
 def export_inference_table(df_inference, y_test=None):
-    """Exportiert Einzelsplit-Inferenztabelle (Block-Bootstrap-KI + DM) als CSV + LaTeX."""
+    """Exportiert Einzelsplit-Inferenztabelle (Block-Bootstrap-KI + DM/CW) als CSV + LaTeX."""
     df_inference.to_csv("results/inference_table.csv")
     print("results/inference_table.csv gespeichert.")
 
@@ -511,10 +511,19 @@ def export_inference_table(df_inference, y_test=None):
         lambda r: f"[{r['CI 2.5%']:.3f}, {r['CI 97.5%']:.3f}]", axis=1
     )
     df_tex = df_tex.drop(columns=["CI 2.5%", "CI 97.5%"])
-    df_tex = df_tex[["Test RMSE", "95%-KI", "DM-Stat", "p-Wert", "Sig."]]
-    df_tex.columns = [
-        "Test RMSE", r"95\%-KI (Bootstrap)", "DM-Stat.", "$p$-Wert", "Sig.",
-    ]
+    # Stat.-Spalte: entweder "Stat." (nach AP22) oder "DM-Stat" (Rückwärtskompatibilität)
+    stat_col = "Stat." if "Stat." in df_tex.columns else "DM-Stat"
+    has_test_col = "Test" in df_tex.columns
+    if has_test_col:
+        df_tex = df_tex[["Test RMSE", "95%-KI", "Test", stat_col, "p-Wert", "Sig."]]
+        df_tex.columns = [
+            "Test RMSE", r"95\%-KI (Bootstrap)", "Test", "Stat.", "$p$-Wert", "Sig.",
+        ]
+    else:
+        df_tex = df_tex[["Test RMSE", "95%-KI", stat_col, "p-Wert", "Sig."]]
+        df_tex.columns = [
+            "Test RMSE", r"95\%-KI (Bootstrap)", "Stat.", "$p$-Wert", "Sig.",
+        ]
 
     t_note = ""
     if y_test is not None:
@@ -527,9 +536,12 @@ def export_inference_table(df_inference, y_test=None):
         caption=(
             r"Einzelfenster-Inferenz: Block-Bootstrap 95\%-Konfidenzintervall für "
             r"den RMSE (zirkulärer Block-Bootstrap, $l=6\approx\sqrt{T}$, $B=2\,000$) "
-            r"und Diebold-Mariano-Test (HLN-Korrektur, $h=1$) je Modell gegen den "
+            r"und Inferenztest je Modell gegen den "
             f"Random Walk{t_note}. "
-            r"DM $> 0$: Modell schlägt RW. Signifikanz: * $p<0{,}10$, ** $p<0{,}05$."
+            r"Nicht-geschachtelte Modelle: Diebold-Mariano-Test (HLN-Korrektur, $h=1$, "
+            r"zweiseitig). Geschachtelte Modelle (Lag-Modell, LASSO+HVPI): "
+            r"Clark-West-Test (2007, einseitig, $H_1$: Modell genauer als RW). "
+            r"Stat.\ $> 0$: Modell schlägt RW. Sig.: * $p<0{,}10$, ** $p<0{,}05$."
         ),
         label="tab:inferenz",
     )
@@ -659,28 +671,29 @@ def update_readmes(ctx):
         f"davon **{_n_train} Training / {TEST_MONTHS} Test**\n"
         f"(Testfenster {_t0} – {_t1}), **{_n_feat} Features**.\n\n"
         f"**Testfenster (fester chronologischer Split), RMSE in Prozentpunkten der Inflationsrate,\n"
-        f"sortiert nach Güte (DM = Diebold-Mariano-Test vs. Random Walk; n.s. = nicht signifikant):**\n\n"
-        f"| Modell | λ | Test-RMSE | RMSE/RW | Test-R² | DM | Koeff. ≠ 0 |\n"
-        f"|--------|----------:|----------:|--------:|--------:|---:|-----------:|\n"
+        f"sortiert nach Güte (Test = DM (nicht-geschachtelt) oder CW (geschachtelt, Clark & West 2007); n.s. = nicht signifikant):**\n\n"
+        f"| Modell | λ | Test-RMSE | RMSE/RW | Test-R² | Test | Koeff. ≠ 0 |\n"
+        f"|--------|----------:|----------:|--------:|--------:|-----:|-----------:|\n"
         f"| **Random Walk** | –        | **{_rw:.2f}** | **1.00** | {r2_rw_test:.2f} | – | – |\n"
-        f"| Lag-Modell (ADL) | –      | {_ar:.2f} | {_ar/_rw:.2f} | {r2_ar_test:.2f} | {_sig('Lag-Modell (ADL)') or 'n.s.'} | {len(AR_LAGS)} |\n"
-        f"| Adaptive LASSO | {lambda_alasso:.5f} | {_alasso:.2f} | {_alasso/_rw:.2f} | {r2_alasso_test:.2f} | {_sig('Adaptive LASSO') or 'n.s.'} | {n_nonzero_alasso} / {_n_feat} |\n"
-        f"| LASSO + HVPI-Lags | {lasso_plus_alpha:.3f}  | {_lp:.2f} | {_lp/_rw:.2f} | {r2_lasso_plus:.2f} | {_sig('LASSO+HVPI') or 'n.s.'} | {n_nonzero_plus} / {_n_plus} |\n"
-        f"| LASSO | {lambda_lasso:.3f}              | {_las:.2f} | {_las/_rw:.2f} | {r2_lasso_test:.2f} | {_sig('LASSO') or 'n.s.'} | {_nz_l} / {_n_feat} |\n"
-        f"| Elastic Net | {lambda_enet:.3f}        | {_en:.2f} | {_en/_rw:.2f} | {r2_enet_test:.2f} | {_sig('Elastic Net') or 'n.s.'} | {n_nonzero_enet} / {_n_feat} |\n"
-        f"| Ridge | {lambda_ridge:.1f}               | {_ri:.2f} | {_ri/_rw:.2f} | {r2_ridge_test:.2f} | {_sig('Ridge') or 'n.s.'} | {_n_feat} / {_n_feat} |\n"
-        f"| OLS | –                    | {_ols:.2f} | {_ols/_rw:.2f} | {_neg(r2_ols_test)} | {_sig('OLS') or 'n.s.'} | {_n_feat} / {_n_feat} |\n\n"
-        f"DM-Test (HLN-korrigiert, T={TEST_MONTHS}): Kein Modell schlägt den RW signifikant "
-        f"(geringe Power bei T={TEST_MONTHS}). Block-Bootstrap-KI je Modell: siehe `results/inference_table.csv`.\n"
+        f"| Lag-Modell (ADL) | –      | {_ar:.2f} | {_ar/_rw:.2f} | {r2_ar_test:.2f} | CW {_sig('Lag-Modell (ADL)') or 'n.s.'} | {len(AR_LAGS)} |\n"
+        f"| Adaptive LASSO | {lambda_alasso:.5f} | {_alasso:.2f} | {_alasso/_rw:.2f} | {r2_alasso_test:.2f} | DM {_sig('Adaptive LASSO') or 'n.s.'} | {n_nonzero_alasso} / {_n_feat} |\n"
+        f"| LASSO + HVPI-Lags | {lasso_plus_alpha:.3f}  | {_lp:.2f} | {_lp/_rw:.2f} | {r2_lasso_plus:.2f} | CW {_sig('LASSO+HVPI') or 'n.s.'} | {n_nonzero_plus} / {_n_plus} |\n"
+        f"| LASSO | {lambda_lasso:.3f}              | {_las:.2f} | {_las/_rw:.2f} | {r2_lasso_test:.2f} | DM {_sig('LASSO') or 'n.s.'} | {_nz_l} / {_n_feat} |\n"
+        f"| Elastic Net | {lambda_enet:.3f}        | {_en:.2f} | {_en/_rw:.2f} | {r2_enet_test:.2f} | DM {_sig('Elastic Net') or 'n.s.'} | {n_nonzero_enet} / {_n_feat} |\n"
+        f"| Ridge | {lambda_ridge:.1f}               | {_ri:.2f} | {_ri/_rw:.2f} | {r2_ridge_test:.2f} | DM {_sig('Ridge') or 'n.s.'} | {_n_feat} / {_n_feat} |\n"
+        f"| OLS | –                    | {_ols:.2f} | {_ols/_rw:.2f} | {_neg(r2_ols_test)} | DM {_sig('OLS') or 'n.s.'} | {_n_feat} / {_n_feat} |\n\n"
+        f"Inferenztests (T={TEST_MONTHS}): DM = Diebold-Mariano (HLN-korr., zweiseitig) für reine Makro-Modelle; "
+        f"CW = Clark-West (2007, einseitig) für Lag-Modell und LASSO+HVPI (geschachtelt in RW). "
+        f"Kein Modell schlägt den RW signifikant (geringe Power bei T={TEST_MONTHS}). Block-Bootstrap-KI: `results/inference_table.csv`.\n"
         f"*Hinweis: Der RW-R² spiegelt die Persistenz der YoY-Rate wider (ŷ_t = y_{{t−1}} erklärt die "
         f"Autokorrelation); er ist nicht mit dem Modell-R² gleichzusetzen.*\n\n"
         f"**Robustheitscheck (Rolling-Origin, Expanding Window):** "
         f"RW {ro['RW']:.2f} · AR {ro['AR']:.2f} · LASSO+HVPI {ro['LASSO+HVPI']:.2f} ·\n"
         f"LASSO {ro['LASSO']:.2f} · Elastic Net {ro['Elastic Net']:.2f} · "
         f"Ridge {ro['Ridge']:.2f} · OLS {ro['OLS']:.2f}. "
-        f"Die adaptiven Modelle (AR, LASSO+HVPI)\n"
+        f"Die geschachtelten Modelle (AR, LASSO+HVPI)\n"
         f"erreichen den RW hier knapp, schlagen ihn aber nicht nachweisbar "
-        f"(Diebold-Mariano n.s.)."
+        f"(Clark-West-Test n.s.)."
     )
 
     block_en = (
@@ -688,27 +701,29 @@ def update_readmes(ctx):
         f"of which **{_n_train} training / {TEST_MONTHS} test**\n"
         f"(test window {_t0} – {_t1}), **{_n_feat} features**.\n\n"
         f"**Test window (fixed chronological split), RMSE in percentage points of the inflation rate,\n"
-        f"sorted by performance (DM = Diebold-Mariano test vs. random walk; n.s. = not significant):**\n\n"
-        f"| Model | λ | Test RMSE | RMSE/RW | Test R² | DM | Coeff. ≠ 0 |\n"
-        f"|-------|----------:|----------:|--------:|--------:|---:|-----------:|\n"
+        f"sorted by performance (Test = DM (non-nested) or CW (nested, Clark & West 2007); n.s. = not significant):**\n\n"
+        f"| Model | λ | Test RMSE | RMSE/RW | Test R² | Test | Coeff. ≠ 0 |\n"
+        f"|-------|----------:|----------:|--------:|--------:|-----:|-----------:|\n"
         f"| **Random Walk** | –        | **{_rw:.2f}** | **1.00** | {r2_rw_test:.2f} | – | – |\n"
-        f"| Lag model (ADL) | –      | {_ar:.2f} | {_ar/_rw:.2f} | {r2_ar_test:.2f} | {_sig('Lag-Modell (ADL)') or 'n.s.'} | {len(AR_LAGS)} |\n"
-        f"| Adaptive LASSO | {lambda_alasso:.5f} | {_alasso:.2f} | {_alasso/_rw:.2f} | {r2_alasso_test:.2f} | {_sig('Adaptive LASSO') or 'n.s.'} | {n_nonzero_alasso} / {_n_feat} |\n"
-        f"| LASSO + HICP lags | {lasso_plus_alpha:.3f}  | {_lp:.2f} | {_lp/_rw:.2f} | {r2_lasso_plus:.2f} | {_sig('LASSO+HVPI') or 'n.s.'} | {n_nonzero_plus} / {_n_plus} |\n"
-        f"| LASSO | {lambda_lasso:.3f}              | {_las:.2f} | {_las/_rw:.2f} | {r2_lasso_test:.2f} | {_sig('LASSO') or 'n.s.'} | {_nz_l} / {_n_feat} |\n"
-        f"| Elastic Net | {lambda_enet:.3f}        | {_en:.2f} | {_en/_rw:.2f} | {r2_enet_test:.2f} | {_sig('Elastic Net') or 'n.s.'} | {n_nonzero_enet} / {_n_feat} |\n"
-        f"| Ridge | {lambda_ridge:.1f}               | {_ri:.2f} | {_ri/_rw:.2f} | {r2_ridge_test:.2f} | {_sig('Ridge') or 'n.s.'} | {_n_feat} / {_n_feat} |\n"
-        f"| OLS | –                    | {_ols:.2f} | {_ols/_rw:.2f} | {_neg(r2_ols_test)} | {_sig('OLS') or 'n.s.'} | {_n_feat} / {_n_feat} |\n\n"
-        f"DM test (HLN-corrected, T={TEST_MONTHS}): no model beats the RW significantly "
-        f"(low power at T={TEST_MONTHS}). Block-bootstrap CIs per model: see `results/inference_table.csv`.\n"
+        f"| Lag model (ADL) | –      | {_ar:.2f} | {_ar/_rw:.2f} | {r2_ar_test:.2f} | CW {_sig('Lag-Modell (ADL)') or 'n.s.'} | {len(AR_LAGS)} |\n"
+        f"| Adaptive LASSO | {lambda_alasso:.5f} | {_alasso:.2f} | {_alasso/_rw:.2f} | {r2_alasso_test:.2f} | DM {_sig('Adaptive LASSO') or 'n.s.'} | {n_nonzero_alasso} / {_n_feat} |\n"
+        f"| LASSO + HICP lags | {lasso_plus_alpha:.3f}  | {_lp:.2f} | {_lp/_rw:.2f} | {r2_lasso_plus:.2f} | CW {_sig('LASSO+HVPI') or 'n.s.'} | {n_nonzero_plus} / {_n_plus} |\n"
+        f"| LASSO | {lambda_lasso:.3f}              | {_las:.2f} | {_las/_rw:.2f} | {r2_lasso_test:.2f} | DM {_sig('LASSO') or 'n.s.'} | {_nz_l} / {_n_feat} |\n"
+        f"| Elastic Net | {lambda_enet:.3f}        | {_en:.2f} | {_en/_rw:.2f} | {r2_enet_test:.2f} | DM {_sig('Elastic Net') or 'n.s.'} | {n_nonzero_enet} / {_n_feat} |\n"
+        f"| Ridge | {lambda_ridge:.1f}               | {_ri:.2f} | {_ri/_rw:.2f} | {r2_ridge_test:.2f} | DM {_sig('Ridge') or 'n.s.'} | {_n_feat} / {_n_feat} |\n"
+        f"| OLS | –                    | {_ols:.2f} | {_ols/_rw:.2f} | {_neg(r2_ols_test)} | DM {_sig('OLS') or 'n.s.'} | {_n_feat} / {_n_feat} |\n\n"
+        f"Inference tests (T={TEST_MONTHS}): DM = Diebold-Mariano (HLN-corrected, two-sided) for pure macro models; "
+        f"CW = Clark-West (2007, one-sided) for lag model and LASSO+HICP (nested within RW). "
+        f"No model beats the RW significantly (low power at T={TEST_MONTHS}). Block-bootstrap CIs: `results/inference_table.csv`.\n"
         f"*Note: The RW R² reflects the persistence (autocorrelation) of the YoY series "
         f"(ŷ_t = y_{{t−1}}); it is not comparable to the model R².*\n\n"
         f"**Robustness check (Rolling-Origin, expanding window):** "
         f"RW {ro['RW']:.2f} · AR {ro['AR']:.2f} · LASSO+HICP {ro['LASSO+HVPI']:.2f} ·\n"
         f"LASSO {ro['LASSO']:.2f} · Elastic Net {ro['Elastic Net']:.2f} · "
         f"Ridge {ro['Ridge']:.2f} · OLS {ro['OLS']:.2f}. "
-        f"The adaptive models (AR, LASSO+HICP)\n"
-        f"nearly match the RW here, but do not beat it significantly (Diebold-Mariano n.s.)."
+        f"The nested models (AR, LASSO+HICP)\n"
+        f"nearly match the RW here, but do not beat it significantly "
+        f"(Clark-West test n.s.)."
     )
 
     _MARKER = re.compile(

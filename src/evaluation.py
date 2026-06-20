@@ -97,6 +97,38 @@ def diebold_mariano(e_rw, e_mod, h=1):
     return dm_hln, p_val
 
 
+# ── Clark-West ────────────────────────────────────────────────────────────────
+
+def clark_west(e_rw, e_mod, h=1):
+    """Clark-West-Test (2007) für geschachtelte Modelle; einseitiger p-Wert.
+
+    Der DM-Test ist bei geschachtelten Modellen (RW ⊂ größeres Modell) unter H0
+    abwärtsverzerrt, weil das größere Modell extra Parameter schätzt und seine
+    MSPE dadurch aufwärtsverzerrt ist.  CW korrigiert dies durch den Term
+    (ŷ_RW − ŷ_M)² = (e_M − e_RW)²:
+
+      f_t = e_RW² − [e_M² − (e_M − e_RW)²]  =  2 · e_RW · (e_RW − e_M)
+
+    H0: E[f_t] ≤ 0 (kein Vorteil des größeren Modells)
+    H1: E[f_t] > 0 (größeres Modell genauer — einseitig)
+    p-Wert = P(N(0,1) > CW_stat); kritische Werte: 1.282 (10%), 1.645 (5%)
+
+    Quelle: Clark & West (2007), Journal of Econometrics 138, 291–311.
+    """
+    e_rw  = np.asarray(e_rw)
+    e_mod = np.asarray(e_mod)
+    f     = e_rw ** 2 - (e_mod ** 2 - (e_mod - e_rw) ** 2)
+    T     = len(f)
+    f_bar = f.mean()
+    var_f = f.var(ddof=0)
+    for k in range(1, h):
+        var_f += 2 * np.cov(f[:-k], f[k:], ddof=0)[0, 1]
+    var_f   = max(var_f / T, 1e-15)
+    cw_stat = f_bar / np.sqrt(var_f)
+    p_val   = 1 - sp_stats.norm.cdf(cw_stat)   # einseitig: H1: CW > 0
+    return cw_stat, p_val
+
+
 # ── OOS-Prognosen (festes λ) ──────────────────────────────────────────────────
 
 def compute_oos_predictions(models_ctx, splits, X, y, train_end):
@@ -260,22 +292,32 @@ def compute_compare_oos(oos_ctx, adap_ctx, y_oos_ref):
     return dict(compare_oos=compare_oos, adap_rmse=adap_rmse)
 
 
-# ── Diebold-Mariano-Tests ─────────────────────────────────────────────────────
+# ── Inferenz-Tests vs. Random Walk (DM + Clark-West) ─────────────────────────
+
+# Geschachtelte Modelle enthalten HVPI_L1 (= RW-Prädiktor) → DM verzerrt → CW
+_NESTED_MODELS_RO = {"AR", "LASSO+HVPI"}
+
 
 def compute_dm_tests(oos_ctx, adap_ctx=None):
-    """DM-Test je Modell gegen Random Walk (HLN-korrigiert, T=36).
+    """DM-Test (nicht-geschachtelt) und Clark-West-Test (geschachtelt) vs. Random Walk.
 
-    adap_ctx: optional; wenn übergeben, wird Adaptive LASSO (adaptiver RO) mitgetestet.
+    Geschachtelte Modelle (RW ⊂ Modell): AR und LASSO+HVPI enthalten HVPI_L1
+    (den RW-Prädiktor) → DM-Test ist unter H0 abwärtsverzerrt (Clark & West 2007).
+    Nicht-geschachtelte Modelle (reine Makro-Modelle): DM-Test (HLN-korrigiert).
+
+    adap_ctx: optional; Adaptive LASSO (adaptiver RO) wird ebenfalls getestet.
     """
     oos_df    = oos_ctx["oos_df"]
     y_oos_ref = oos_ctx["y_oos_ref"]
 
-    y_ref     = y_oos_ref.loc[oos_df.index.intersection(y_oos_ref.index)]
-    e_rw_ro   = (oos_ctx["oos_rw"].reindex(y_ref.index) - y_ref).dropna()
+    y_ref   = y_oos_ref.loc[oos_df.index.intersection(y_oos_ref.index)]
+    e_rw_ro = (oos_ctx["oos_rw"].reindex(y_ref.index) - y_ref).dropna()
 
     dm_records = []
-    print("Diebold-Mariano-Test (Referenz: Random Walk, h=1, HLN-Korrektur, T=36)")
-    print(f"{'Modell':<22} {'DM-Stat':>9} {'p-Wert':>9} {'Signifikanz':>12}")
+    print("Inferenz-Tests vs. Random Walk (h=1, T≈36)")
+    print("  DM: Diebold-Mariano, HLN-korrigiert, zweiseitig (nicht-geschachtelte Modelle)")
+    print("  CW: Clark-West (2007), einseitig H1: Modell besser (geschachtelte Modelle)")
+    print(f"{'Modell':<22} {'Test':>4} {'Stat.':>9} {'p-Wert':>9} {'Sig.':>6}")
     print("-" * 57)
 
     cols = ["AR", "LASSO+HVPI", "LASSO", "Elastic Net", "Ridge", "OLS"]
@@ -287,16 +329,22 @@ def compute_dm_tests(oos_ctx, adap_ctx=None):
         preds  = preds_series.reindex(y_ref.index).dropna()
         e_mod  = (preds - y_ref.loc[preds.index]).dropna()
         e_rw_a = e_rw_ro.loc[e_mod.index]
-        dm, pv = diebold_mariano(e_rw_a.values, e_mod.values, h=1)
-        sig    = "**" if pv < 0.05 else ("*" if pv < 0.10 else "n.s.")
+        if col in _NESTED_MODELS_RO:
+            stat, pv   = clark_west(e_rw_a.values, e_mod.values, h=1)
+            test_label = "CW"
+        else:
+            stat, pv   = diebold_mariano(e_rw_a.values, e_mod.values, h=1)
+            test_label = "DM"
+        sig = "**" if pv < 0.05 else ("*" if pv < 0.10 else "n.s.")
         dm_records.append({
-            "Modell": col, "DM-Stat": round(dm, 3),
-            "p-Wert": round(pv, 4), "Sig.": sig,
+            "Modell": col, "Test": test_label,
+            "Stat.": round(stat, 3), "p-Wert": round(pv, 4), "Sig.": sig,
         })
-        print(f"  {col:<20} {dm:>+9.3f} {pv:>9.4f} {sig:>12}")
+        print(f"  {col:<20} {test_label:>4} {stat:>+9.3f} {pv:>9.4f} {sig:>6}")
 
     print("-" * 57)
-    print("DM > 0: Modell schlägt Random Walk (niedr. Verlust)  | * p<0.10  ** p<0.05")
+    print("Stat. > 0: Modell schlägt RW  | * p<0.10  ** p<0.05")
+    print("CW p-Wert einseitig; DM p-Wert zweiseitig.")
     dm_df = pd.DataFrame(dm_records).set_index("Modell")
     return {"dm_df": dm_df}
 
@@ -326,6 +374,9 @@ def compute_single_split_inference(models_ctx, splits, block_len: int = 6,
     DM-Test (HLN-korrigiert, h=1) gegen Random Walk — identische Implementierung
     wie beim Rolling-Origin (compute_dm_tests), aber auf den Einzelsplit-Fehlern.
 
+    Geschachtelte Modelle (Lag-Modell/ADL, LASSO+HVPI) verwenden den Clark-West-Test
+    (2007, einseitig); alle übrigen Modelle den DM-Test (HLN-korrigiert, zweiseitig).
+
     Parameters
     ----------
     models_ctx : ctx-Dict aus training.fit_all_models
@@ -336,7 +387,7 @@ def compute_single_split_inference(models_ctx, splits, block_len: int = 6,
 
     Returns
     -------
-    dict mit 'df_inference': DataFrame (Modell × RMSE + CI + DM-Stat + p + Sig.)
+    dict mit 'df_inference': DataFrame (Modell × RMSE + CI + Test + Stat. + p + Sig.)
     """
     y_test = splits["y_test"]
     rng    = np.random.default_rng(seed)
@@ -360,14 +411,20 @@ def compute_single_split_inference(models_ctx, splits, block_len: int = 6,
     e_rw_series = (_s(models_ctx["y_pred_rw_test"]) - y_test).dropna()
     T = len(e_rw_series)
 
+    # Geschachtelte Modelle auf dem Einzelsplit: Lag-Modell (ADL) und LASSO+HVPI
+    # enthalten HVPI_L1 (RW-Prädiktor) → Clark-West-Test statt DM.
+    _NESTED = {"Lag-Modell (ADL)", "LASSO+HVPI"}
+
     records = []
-    print(f"\nEinzelfenster-Inferenz: Block-Bootstrap RMSE-95%-KI + DM-Test (T={T})")
+    print(f"\nEinzelfenster-Inferenz: Block-Bootstrap RMSE-95%-KI + DM/CW-Test (T={T})")
     print(f"Block-Bootstrap: B={B}, Blocklänge l={block_len} (≈ √T={int(T**0.5)})")
+    print("DM (HLN-korr., zweiseitig) für nicht-geschachtelte; CW (2007, einseitig) für")
+    print("geschachtelte Modelle (Lag-Modell/ADL, LASSO+HVPI ⊃ RW).")
     print(
         f"{'Modell':<22} {'RMSE':>7} {'CI [2.5%, 97.5%]':>20}"
-        f" {'DM-Stat':>9} {'p-Wert':>9} {'Sig.':>6}"
+        f" {'Test':>4} {'Stat.':>9} {'p-Wert':>9} {'Sig.':>6}"
     )
-    print("-" * 80)
+    print("-" * 85)
 
     for name, preds in preds_map.items():
         e_mod_series = (preds - y_test).dropna()
@@ -380,29 +437,40 @@ def compute_single_split_inference(models_ctx, splits, block_len: int = 6,
         ci_lo, ci_hi  = np.percentile(boot_rmse_arr, [2.5, 97.5])
 
         if name == "Random Walk":
-            dm, pv, sig = np.nan, np.nan, "–"
+            stat, pv, sig, test_label = np.nan, np.nan, "–", "–"
+        elif name in _NESTED:
+            stat, pv   = clark_west(e_rw_a, e_mod_a, h=1)
+            test_label = "CW"
+            sig        = "**" if pv < 0.05 else ("*" if pv < 0.10 else "n.s.")
         else:
-            dm, pv = diebold_mariano(e_rw_a, e_mod_a, h=1)
-            sig    = "**" if pv < 0.05 else ("*" if pv < 0.10 else "n.s.")
+            stat, pv   = diebold_mariano(e_rw_a, e_mod_a, h=1)
+            test_label = "DM"
+            sig        = "**" if pv < 0.05 else ("*" if pv < 0.10 else "n.s.")
 
         records.append({
             "Modell":    name,
             "Test RMSE": round(rmse, 4),
             "CI 2.5%":   round(ci_lo, 4),
             "CI 97.5%":  round(ci_hi, 4),
-            "DM-Stat":   round(float(dm), 3) if not np.isnan(dm) else np.nan,
+            "Test":      test_label,
+            "Stat.":     round(float(stat), 3) if not np.isnan(stat) else np.nan,
             "p-Wert":    round(float(pv), 4) if not np.isnan(pv) else np.nan,
             "Sig.":      sig,
         })
 
-        ci_str = f"[{ci_lo:.3f}, {ci_hi:.3f}]"
-        dm_str = f"{float(dm):+.3f}" if not np.isnan(dm) else "        –"
-        pv_str = f"{float(pv):.4f}" if not np.isnan(pv) else "        –"
-        print(f"  {name:<20} {rmse:>7.4f} {ci_str:>20} {dm_str:>9} {pv_str:>9} {sig:>6}")
+        ci_str   = f"[{ci_lo:.3f}, {ci_hi:.3f}]"
+        stat_str = f"{float(stat):+.3f}" if not np.isnan(stat) else "        –"
+        pv_str   = f"{float(pv):.4f}"   if not np.isnan(pv)   else "        –"
+        tl_str   = test_label if test_label != "–" else " –"
+        print(
+            f"  {name:<20} {rmse:>7.4f} {ci_str:>20} {tl_str:>4}"
+            f" {stat_str:>9} {pv_str:>9} {sig:>6}"
+        )
 
-    print("-" * 80)
-    print("DM > 0: Modell schlägt RW (niedrig. quadr. Verlust)  | * p<0.10  ** p<0.05")
-    print(f"Hinweis: T={T} Testpunkte — DM hat geringe Power; Unterschiede i.d.R. n.s.")
+    print("-" * 85)
+    print("Stat. > 0: Modell schlägt RW  | * p<0.10  ** p<0.05")
+    print("CW p-Wert einseitig (H1: geschachteltes Modell genauer); DM zweiseitig.")
+    print(f"Hinweis: T={T} Testpunkte — geringe Testpower; Unterschiede i.d.R. n.s.")
 
     df_inf = pd.DataFrame(records).set_index("Modell")
     return {"df_inference": df_inf}
