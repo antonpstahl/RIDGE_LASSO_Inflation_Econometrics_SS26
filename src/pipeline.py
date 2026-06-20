@@ -45,7 +45,7 @@ from .reporting import (
 from .training import fit_all_models
 
 
-def run_all(use_cache=True, verbose=True, adaptive_rolling=True,
+def run_all(use_cache=True, verbose=True, adaptive_rolling=False,
             generate_figures=True):
     """Fuehrt die vollstaendige Pipeline aus und gibt einen Kontext-Dict zurueck.
 
@@ -53,7 +53,10 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=True,
     ----------
     use_cache         : bool  — Rohdaten aus CSV-Cache laden (True) oder API (False)
     verbose           : bool  — Status-Ausgaben aktivieren
-    adaptive_rolling  : bool  — Adaptive Rolling-Origin (λ je Origin, ~10-20 min)
+    adaptive_rolling  : bool  — Optionaler Robustheitslauf: adaptiver Rolling-Origin
+                                (λ je Origin neu via CV, ~10-20 min). Default aus,
+                                da der Erkenntniswert (Null-Befund) den Aufwand nicht
+                                rechtfertigt; Hauptergebnisse basieren auf festem λ.
     generate_figures  : bool  — Abbildungen erzeugen und speichern
 
     Returns
