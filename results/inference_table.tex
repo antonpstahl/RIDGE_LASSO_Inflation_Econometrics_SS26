@@ -1,19 +1,19 @@
 \begin{table}
-\caption{Einzelfenster-Inferenz: Block-Bootstrap 95\%-Konfidenzintervall für den RMSE (zirkulärer Block-Bootstrap, $l=6\approx\sqrt{T}$, $B=2\,000$) und Diebold-Mariano-Test (HLN-Korrektur, $h=1$) je Modell gegen den Random Walk, T=36 Testpunkte. DM $> 0$: Modell schlägt RW. Signifikanz: * $p<0{,}10$, ** $p<0{,}05$.}
+\caption{Einzelfenster-Inferenz: Block-Bootstrap 95\%-Konfidenzintervall für den RMSE (zirkulärer Block-Bootstrap, $l=6\approx\sqrt{T}$, $B=2\,000$) und Inferenztest je Modell gegen den Random Walk, T=36 Testpunkte. Nicht-geschachtelte Modelle: Diebold-Mariano-Test (HLN-Korrektur, $h=1$, zweiseitig). Geschachtelte Modelle (Lag-Modell, LASSO+HVPI): Clark-West-Test (2007, einseitig, $H_1$: Modell genauer als RW).  $p_{\mathrm{adj}}$: Bonferroni-Korrektur für Mehrfachtests ($p_{\mathrm{adj},i}=\min(n\cdot p_i,1)$; $n$ = Anzahl Tests). Stat.\ $> 0$: Modell schlägt RW. Sig.: * $p<0{,}10$, ** $p<0{,}05$.}
 \label{tab:inferenz}
-\begin{tabular}{lrlrrl}
+\begin{tabular}{lrllrrrl}
 \toprule
- & Test RMSE & 95\%-KI (Bootstrap) & DM-Stat. & $p$-Wert & Sig. \\
-Modell &  &  &  &  &  \\
+ & Test RMSE & 95\%-KI (Bootstrap) & Test & Stat. & $p$-Wert & $p_{\mathrm{adj}}$ (Bonf.) & Sig. adj. \\
+Modell &  &  &  &  &  &  &  \\
 \midrule
-Random Walk & 0.9398 & [0.746, 1.098] & – & – & – \\
-Lag-Modell (ADL) & 1.0542 & [0.764, 1.317] & -0.8900 & 0.3795 & n.s. \\
-OLS & 3.4037 & [2.192, 4.377] & -3.4070 & 0.0017 & ** \\
-Ridge & 1.9571 & [1.462, 2.386] & -4.1670 & 0.0002 & ** \\
-LASSO & 1.8312 & [1.505, 2.164] & -4.7610 & 0.0000 & ** \\
-Elastic Net & 1.8454 & [1.512, 2.164] & -4.8160 & 0.0000 & ** \\
-LASSO+HVPI & 1.4745 & [0.891, 1.922] & -2.8380 & 0.0075 & ** \\
-Adaptive LASSO & 1.3769 & [0.994, 1.770] & -1.9830 & 0.0553 & * \\
+Random Walk & 0.9398 & [0.746, 1.098] & – & – & – & – & – \\
+Lag-Modell (ADL) & 1.0542 & [0.764, 1.317] & CW & 1.3500 & 0.0885 & 0.6195 & n.s. \\
+OLS & 3.4037 & [2.192, 4.377] & DM & -3.4070 & 0.0017 & 0.0119 & ** \\
+Ridge & 1.9571 & [1.462, 2.386] & DM & -4.1670 & 0.0002 & 0.0014 & ** \\
+LASSO & 1.8312 & [1.505, 2.164] & DM & -4.7610 & 0.0000 & 0.0000 & ** \\
+Elastic Net & 1.8454 & [1.512, 2.164] & DM & -4.8160 & 0.0000 & 0.0000 & ** \\
+LASSO+HVPI & 1.4745 & [0.891, 1.922] & CW & 0.4660 & 0.3205 & 1.0000 & n.s. \\
+Adaptive LASSO & 1.3769 & [0.994, 1.770] & DM & -1.9830 & 0.0553 & 0.3871 & n.s. \\
 \bottomrule
 \end{tabular}
 \end{table}

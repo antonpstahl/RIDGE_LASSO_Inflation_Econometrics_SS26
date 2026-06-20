@@ -1,0 +1,18 @@
+\begin{table}
+\caption{Rolling-Origin-RMSE und RMSE/RW je Inflationsregime ($h=1$, festes $\lambda$). Schock: Energie-Preisschock (steigend/Peak, 2021-06--2023-03). Disinflation: 2023-04--2024-10. $n_{\text{Schock}}=22$, $n_{\text{Disinfl.}}=14$. RMSE/RW $< 1$: Modell schlägt den Random Walk; RMSE/RW $= 1{,}00$: Referenz (RW). Kein Modell schlägt den RW in einem der beiden Regime — die Aussage ist nicht auf das Energiepreis-Schock-Regime beschränkt.}
+\label{tab:regime}
+\begin{tabular}{lrrrrrr}
+\toprule
+ & RMSE Schock & RMSE/RW Schock & RMSE Disinfl. & RMSE/RW Disinfl. & RMSE Gesamt & RMSE/RW Gesamt \\
+Modell &  &  &  &  &  &  \\
+\midrule
+RW & 0.9584 & 1.0000 & 0.9098 & 1.0000 & 0.9398 & 1.0000 \\
+AR & 1.0173 & 1.0615 & 0.8329 & 0.9155 & 0.9499 & 1.0107 \\
+OLS & 2.8481 & 2.9716 & 1.1699 & 1.2858 & 2.3430 & 2.4930 \\
+Ridge & 1.0304 & 1.0751 & 1.3368 & 1.4693 & 1.1592 & 1.2334 \\
+LASSO & 0.9927 & 1.0358 & 1.2194 & 1.3403 & 1.0865 & 1.1561 \\
+Elastic Net & 0.9919 & 1.0349 & 1.2292 & 1.3511 & 1.0903 & 1.1601 \\
+LASSO+HVPI & 1.0134 & 1.0573 & 0.8410 & 0.9243 & 0.9500 & 1.0109 \\
+\bottomrule
+\end{tabular}
+\end{table}

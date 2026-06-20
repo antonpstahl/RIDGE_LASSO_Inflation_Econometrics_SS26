@@ -99,26 +99,32 @@ available as PNGs in `results/figures/`.
 Dataset: **261 observations** (2002-01 – 2024-10), of which **225 training / 36 test**
 (test window 2021-06 – 2024-10), **155 features**.
 
-**Test window (fixed chronological split), RMSE in percentage points of the inflation rate,
-sorted by performance (DM = Diebold-Mariano test vs. random walk; n.s. = not significant):**
+**Test window (fixed chronological split), RMSE in percentage points of the inflation rate.**
+Test = DM (non-nested) or CW (nested, Clark & West 2007); n.s. = not significant.
 
-| Model | λ | Test RMSE | RMSE/RW | Test R² | DM | Coeff. ≠ 0 |
-|-------|----------:|----------:|--------:|--------:|---:|-----------:|
-| **Random Walk** | –        | **0.94** | **1.00** | 0.89 | – | – |
-| Lag model (ADL) | –      | 1.05 | 1.12 | 0.87 |  n.s. | 5 |
-| Adaptive LASSO | 0.00032 | 1.38 | 1.47 | 0.77 |  * | 50 / 155 |
-| LASSO + HICP lags | 0.064  | 1.47 | 1.57 | 0.74 |  ** | 7 / 160 |
-| LASSO | 0.030              | 1.83 | 1.95 | 0.59 |  ** | 29 / 155 |
-| Elastic Net | 0.039        | 1.85 | 1.96 | 0.59 |  ** | 34 / 155 |
-| Ridge | 54.8               | 1.96 | 2.08 | 0.54 |  ** | 155 / 155 |
-| OLS | –                    | 3.40 | 3.62 | −0.40 |  ** | 155 / 155 |
+| Model | λ | Test RMSE | RMSE/RW | Test R² | Test | Coeff. ≠ 0 |
+|-------|----------:|----------:|--------:|--------:|-----:|-----------:|
+| *— Benchmark —* | | | | | | |
+| **Random Walk** | – | **0.94** | **1.00** | 0.89 | – | – |
+| Lag model (ADL) | – | 1.05 | 1.12 | 0.87 | CW  * | 5 |
+| *— Central comparison: own lags + macro (economically clean, ceteris paribus) —* | | | | | | |
+| LASSO + HICP lags | 0.064 | 1.47 | 1.57 | 0.74 | CW  n.s. | 7 / 160 |
+| *— Didactic: macro only, no own lags (structurally disadvantaged) —* | | | | | | |
+| Adaptive LASSO | 0.00032 | 1.38 | 1.47 | 0.77 | DM  * | 50 / 155 |
+| LASSO | 0.030 | 1.83 | 1.95 | 0.59 | DM  ** | 29 / 155 |
+| Elastic Net | 0.039 | 1.85 | 1.96 | 0.59 | DM  ** | 34 / 155 |
+| Ridge | 54.8 | 1.96 | 2.08 | 0.54 | DM  ** | 155 / 155 |
+| OLS | – | 3.40 | 3.62 | −0.40 | DM  ** | 155 / 155 |
 
-DM test (HLN-corrected, T=36): no model beats the RW significantly (low power at T=36). Block-bootstrap CIs per model: see `results/inference_table.csv`.
+**Central finding:** Lag model (ADL, own lags only) RMSE/RW = 1.12 · LASSO+HICP (own lags + macro) RMSE/RW = 1.57 → macro value-added beyond persistence ≈ 0 (ceteris paribus).
+The pure macro models (didactic group) lack the strongest single predictor (HICP lag) — their performance (RMSE/RW ≥ 1.47) illustrates regularization vs. OLS overfitting but is **not a fair race against the RW**.
+
+Inference tests (T=36): DM = Diebold-Mariano (HLN-corrected, two-sided) for pure macro models; CW = Clark-West (2007, one-sided) for lag model and LASSO+HICP (nested within RW). No model beats the RW significantly (low power at T=36). Block-bootstrap CIs: `results/inference_table.csv`.
 *Note: The RW R² reflects the persistence (autocorrelation) of the YoY series (ŷ_t = y_{t−1}); it is not comparable to the model R².*
 
 **Robustness check (Rolling-Origin, expanding window):** RW 0.94 · AR 0.95 · LASSO+HICP 0.95 ·
-LASSO 1.09 · Elastic Net 1.09 · Ridge 1.16 · OLS 2.34. The adaptive models (AR, LASSO+HICP)
-nearly match the RW here, but do not beat it significantly (Diebold-Mariano n.s.).
+LASSO 1.09 · Elastic Net 1.09 · Ridge 1.16 · OLS 2.34. The nested models (AR, LASSO+HICP)
+nearly match the RW here, but do not beat it significantly (Clark-West test n.s.).
 <!-- RESULTS:END -->
 
 ### Key findings
