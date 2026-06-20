@@ -6,7 +6,7 @@ import pytest
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from src.evaluation import clark_west, diebold_mariano, rolling_origin
+from src.evaluation import bonferroni_correct, clark_west, diebold_mariano, rolling_origin
 
 
 # ── Diebold-Mariano ───────────────────────────────────────────────────────────
@@ -90,6 +90,33 @@ def test_cw_adjustment_exceeds_dm_numerator():
     assert f_cw.mean() >= f_dm.mean() - 1e-12, (
         f"CW-Numerator {f_cw.mean():.6f} sollte >= DM-Numerator {f_dm.mean():.6f}"
     )
+
+
+# ── Bonferroni-Korrektur ──────────────────────────────────────────────────────
+
+def test_bonferroni_correct_basic():
+    """p_adj_i = min(n * p_i, 1.0) fuer alle nicht-NaN Eintraege."""
+    p_values = [0.05, 0.10, 0.02]   # n = 3
+    p_adj = bonferroni_correct(p_values)
+    expected = [min(3 * p, 1.0) for p in p_values]
+    np.testing.assert_allclose(p_adj, expected)
+
+
+def test_bonferroni_correct_nan_passthrough():
+    """NaN-Eintraege (Referenzmodell ohne Test) werden unveraendert weitergereicht."""
+    p_values = [np.nan, 0.05, 0.10]   # n_valid = 2
+    p_adj = bonferroni_correct(p_values)
+    assert np.isnan(p_adj[0]), "NaN-Eintrag soll unveraendert bleiben"
+    np.testing.assert_allclose(p_adj[1], min(2 * 0.05, 1.0))
+    np.testing.assert_allclose(p_adj[2], min(2 * 0.10, 1.0))
+
+
+def test_bonferroni_correct_clamp():
+    """Korrigierte p-Werte werden auf 1.0 gedeckelt."""
+    p_values = [0.8, 0.9]   # 2 * 0.8 = 1.6 > 1.0
+    p_adj = bonferroni_correct(p_values)
+    assert all(v <= 1.0 for v in p_adj), "Kein p_adj darf 1.0 ueberschreiten"
+    np.testing.assert_allclose(p_adj, [1.0, 1.0])
 
 
 # ── Rolling-Origin ────────────────────────────────────────────────────────────

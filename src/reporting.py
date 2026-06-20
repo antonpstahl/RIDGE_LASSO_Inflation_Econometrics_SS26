@@ -514,7 +514,15 @@ def export_inference_table(df_inference, y_test=None):
     # Stat.-Spalte: entweder "Stat." (nach AP22) oder "DM-Stat" (Rückwärtskompatibilität)
     stat_col = "Stat." if "Stat." in df_tex.columns else "DM-Stat"
     has_test_col = "Test" in df_tex.columns
-    if has_test_col:
+    has_bonf_col = "p adj. (Bonf.)" in df_tex.columns
+    if has_test_col and has_bonf_col:
+        df_tex = df_tex[["Test RMSE", "95%-KI", "Test", stat_col, "p-Wert",
+                          "p adj. (Bonf.)", "Sig. adj."]]
+        df_tex.columns = [
+            "Test RMSE", r"95\%-KI (Bootstrap)", "Test", "Stat.", "$p$-Wert",
+            r"$p_{\mathrm{adj}}$ (Bonf.)", "Sig. adj.",
+        ]
+    elif has_test_col:
         df_tex = df_tex[["Test RMSE", "95%-KI", "Test", stat_col, "p-Wert", "Sig."]]
         df_tex.columns = [
             "Test RMSE", r"95\%-KI (Bootstrap)", "Test", "Stat.", "$p$-Wert", "Sig.",
@@ -529,6 +537,12 @@ def export_inference_table(df_inference, y_test=None):
     if y_test is not None:
         t_note = f", T={len(y_test)} Testpunkte"
 
+    bonf_note = (
+        r" $p_{\mathrm{adj}}$: Bonferroni-Korrektur für Mehrfachtests "
+        r"($p_{\mathrm{adj},i}=\min(n\cdot p_i,1)$; $n$ = Anzahl Tests)."
+        if has_bonf_col else ""
+    )
+
     latex_str = df_tex.to_latex(
         escape=False,
         float_format="%.4f",
@@ -541,7 +555,8 @@ def export_inference_table(df_inference, y_test=None):
             r"Nicht-geschachtelte Modelle: Diebold-Mariano-Test (HLN-Korrektur, $h=1$, "
             r"zweiseitig). Geschachtelte Modelle (Lag-Modell, LASSO+HVPI): "
             r"Clark-West-Test (2007, einseitig, $H_1$: Modell genauer als RW). "
-            r"Stat.\ $> 0$: Modell schlägt RW. Sig.: * $p<0{,}10$, ** $p<0{,}05$."
+            + bonf_note +
+            r" Stat.\ $> 0$: Modell schlägt RW. Sig.: * $p<0{,}10$, ** $p<0{,}05$."
         ),
         label="tab:inferenz",
     )

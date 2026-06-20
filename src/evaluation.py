@@ -292,6 +292,23 @@ def compute_compare_oos(oos_ctx, adap_ctx, y_oos_ref):
     return dict(compare_oos=compare_oos, adap_rmse=adap_rmse)
 
 
+# ── Bonferroni-Korrektur für Mehrfachtests ────────────────────────────────────
+
+def bonferroni_correct(p_values):
+    """Bonferroni family-wise error rate correction.
+
+    p_adj_i = min(n * p_i, 1.0) where n is the number of non-NaN p-values.
+    NaN entries (e.g., reference model without a test) are passed through unchanged.
+    """
+    p_arr = np.asarray(p_values, dtype=float)
+    n_valid = int(np.sum(~np.isnan(p_arr)))
+    return np.where(
+        np.isnan(p_arr),
+        np.nan,
+        np.minimum(p_arr * n_valid, 1.0),
+    )
+
+
 # ── Inferenz-Tests vs. Random Walk (DM + Clark-West) ─────────────────────────
 
 # Geschachtelte Modelle enthalten HVPI_L1 (= RW-Prädiktor) → DM verzerrt → CW
@@ -345,6 +362,16 @@ def compute_dm_tests(oos_ctx, adap_ctx=None):
     print("-" * 57)
     print("Stat. > 0: Modell schlägt RW  | * p<0.10  ** p<0.05")
     print("CW p-Wert einseitig; DM p-Wert zweiseitig.")
+
+    # Bonferroni-Korrektur über alle parallelen Tests
+    n_tests = len(dm_records)
+    p_adj_arr = bonferroni_correct([r["p-Wert"] for r in dm_records])
+    for rec, p_adj in zip(dm_records, p_adj_arr):
+        rec["p adj. (Bonf.)"] = round(float(p_adj), 4)
+        rec["Sig. adj."] = "**" if p_adj < 0.05 else ("*" if p_adj < 0.10 else "n.s.")
+    print(f"Multiplizität: {n_tests} Tests vs. RW (Rolling-Origin, h=1).")
+    print(f"Bonferroni: p_adj = min({n_tests}·p, 1). Beim Null-Befund keine Änderung der Schlussfolgerung.")
+
     dm_df = pd.DataFrame(dm_records).set_index("Modell")
     return {"dm_df": dm_df}
 
@@ -471,6 +498,19 @@ def compute_single_split_inference(models_ctx, splits, block_len: int = 6,
     print("Stat. > 0: Modell schlägt RW  | * p<0.10  ** p<0.05")
     print("CW p-Wert einseitig (H1: geschachteltes Modell genauer); DM zweiseitig.")
     print(f"Hinweis: T={T} Testpunkte — geringe Testpower; Unterschiede i.d.R. n.s.")
+
+    # Bonferroni-Korrektur über alle parallelen Tests (NaN-Zeile = RW wird übersprungen)
+    p_raw = [r["p-Wert"] for r in records]
+    p_adj_arr = bonferroni_correct(p_raw)
+    n_tests = int(np.sum(~np.isnan(np.asarray(p_raw, dtype=float))))
+    for rec, p_adj in zip(records, p_adj_arr):
+        if np.isnan(p_adj):
+            rec["p adj. (Bonf.)"] = np.nan
+            rec["Sig. adj."] = "–"
+        else:
+            rec["p adj. (Bonf.)"] = round(float(p_adj), 4)
+            rec["Sig. adj."] = "**" if p_adj < 0.05 else ("*" if p_adj < 0.10 else "n.s.")
+    print(f"Bonferroni: {n_tests} Tests vs. RW (Einzelsplit); p_adj = min({n_tests}·p, 1).")
 
     df_inf = pd.DataFrame(records).set_index("Modell")
     return {"df_inference": df_inf}
