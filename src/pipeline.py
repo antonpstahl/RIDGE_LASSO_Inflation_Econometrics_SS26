@@ -10,6 +10,7 @@ from .evaluation import (
     compute_horizon_analysis,
     compute_oos_predictions,
     compute_regime_analysis,
+    compute_robustness_extended_oos,
     compute_robustness_mom,
     compute_selection_by_regime,
     compute_selection_stability,
@@ -21,6 +22,7 @@ from .reporting import (
     export_inference_table,
     export_regime_table,
     export_results_table,
+    export_robustness_extended_table,
     export_robustness_table,
     export_selection_economic,
     export_sources_table,
@@ -46,7 +48,7 @@ from .training import fit_all_models
 
 
 def run_all(use_cache=True, verbose=True, adaptive_rolling=False,
-            generate_figures=True):
+            generate_figures=True, extended_oos=True):
     """Fuehrt die vollstaendige Pipeline aus und gibt einen Kontext-Dict zurueck.
 
     Parameters
@@ -58,6 +60,10 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=False,
                                 da der Erkenntniswert (Null-Befund) den Aufwand nicht
                                 rechtfertigt; Hauptergebnisse basieren auf festem λ.
     generate_figures  : bool  — Abbildungen erzeugen und speichern
+    extended_oos      : bool  — Robustheitslauf Sample-Verlängerung (AP32 / G6):
+                                entfernt die bindende Reihe (BS_Produktionserwart),
+                                verlängert das OOS-Fenster auf 2025-12 und testet die
+                                These "RW unschlagbar" erstmals im Post-Schock-Regime.
 
     Returns
     -------
@@ -117,6 +123,10 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=False,
     sel_regime_ctx = compute_selection_by_regime(X, y, train_end, models_ctx["lambda_lasso"])
     hor_ctx        = compute_horizon_analysis(df_yoy, tscv=config.TSCV)
     rob_ctx = compute_robustness_mom(df_raw, test_months=config.TEST_MONTHS)
+    ext_ctx = (
+        compute_robustness_extended_oos(df_yoy, test_months=config.TEST_MONTHS)
+        if extended_oos else {}
+    )
 
     # ── Kontext zusammenführen ────────────────────────────────────────────────
     ctx = {
@@ -135,6 +145,8 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=False,
         **sel_regime_ctx,
         **hor_ctx,
         **rob_ctx,
+        # ext_ctx wird namespaced eingehängt (kollidierende Keys: n_shock/shock_end)
+        "robustness_extended": ext_ctx or None,
     }
 
     # ── Reporting ─────────────────────────────────────────────────────────────
@@ -175,6 +187,8 @@ def run_all(use_cache=True, verbose=True, adaptive_rolling=False,
     export_sources_table()
     export_gr_table(gr_ctx)
     export_robustness_table(rob_ctx["df_robustness_mom"])
+    if extended_oos:
+        export_robustness_extended_table(ext_ctx)
     export_selection_economic(sel_regime_ctx)
     update_readmes(ctx)
 

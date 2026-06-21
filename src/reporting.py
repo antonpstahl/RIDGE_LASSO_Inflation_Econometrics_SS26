@@ -684,6 +684,45 @@ def export_robustness_table(df_robustness_mom):
     print(df_robustness_mom.to_string())
 
 
+def export_robustness_extended_table(ext_ctx):
+    """Exportiert Sample-Verlängerungs-Robustheit (AP32) nach results/robustness_extended.{csv,tex}."""
+    df  = ext_ctx["df_robustness_extended"]
+    df.to_csv("results/robustness_extended.csv")
+    print("results/robustness_extended.csv gespeichert.")
+
+    dropped   = ", ".join(ext_ctx["dropped"]) or "—"
+    post_start = (pd.Timestamp(ext_ctx["shock_end"])
+                  + pd.DateOffset(months=1)).strftime("%Y-%m")
+    df_tex = df.rename(columns={
+        "RMSE/RW Schock": r"RMSE/RW$_{S}$", "RMSE/RW Post": r"RMSE/RW$_{P}$",
+        "RMSE/RW Gesamt": r"RMSE/RW$_{G}$", "Stat Post": "Stat$_P$",
+        "p Post": r"$p_P$", "Sig Post": "Sig$_P$",
+    })
+    latex_str = df_tex.to_latex(
+        float_format="%.4f",
+        escape=False,
+        caption=(
+            r"Robustheit Sample-Verlängerung (AP32): Rolling-Origin-RMSE ($h=1$, "
+            r"festes $\lambda$) nach Entfernen der bindenden Reihe \texttt{"
+            + dropped.replace("_", r"\_") + r"}. Das OOS-Fenster verlängert sich von "
+            + ext_ctx["orig_end"].strftime("%Y-%m") + r" auf "
+            + ext_ctx["ext_end"].strftime("%Y-%m") + r" (+"
+            + str(ext_ctx["months_gained"]) + r" Monate); das Post-Schock-Segment ("
+            + post_start + r"--" + ext_ctx["ext_end"].strftime("%Y-%m")
+            + r", $n_P=" + str(ext_ctx["n_post"]) + r"$) testet die These "
+            r"\emph{RW unschlagbar} erstmals out-of-sample im Nicht-Schock-Regime. "
+            r"Index $S$: Schock, $P$: Post-Schock, $G$: gesamt. "
+            r"Post-Test: DM (HLN, zweiseitig) bzw. CW (2007, einseitig, geschachtelt) "
+            r"vs. RW; Stat$_P>0$ und Sig$_P\in\{*,**\}$ → Modell schlägt RW signifikant."
+        ),
+        label="tab:robustheit_extended",
+    )
+    with open("results/robustness_extended.tex", "w") as f:
+        f.write(latex_str)
+    print("results/robustness_extended.tex gespeichert.")
+    print(df.to_string())
+
+
 def fig_14_giacomini_rossi(gr_ctx, shock_end=None):
     """Giacomini-Rossi-Fluctuation-Plot: rollierende GR_t(m)-Statistik vs. Zeit.
 
@@ -842,6 +881,7 @@ def update_readmes(ctx):
 
     train_end = ctx["train_end"]
     ro        = ctx["oos_rmse"]
+    ext       = ctx.get("robustness_extended")
 
     _n_total = len(y)
     _n_train = train_end
@@ -965,6 +1005,52 @@ def update_readmes(ctx):
         f"nearly match the RW here, but do not beat it significantly "
         f"(Clark-West test n.s.)."
     )
+
+    # ── Robustheit Sample-Verlängerung (AP32) — optionaler Zusatzabsatz ────────
+    if ext:
+        df_e   = ext["df_robustness_extended"]
+        non_rw = df_e.drop("RW", errors="ignore")
+        best_p = non_rw["RMSE/RW Post"].idxmin()
+        val_p  = non_rw.loc[best_p, "RMSE/RW Post"]
+        post0  = (pd.Timestamp(ext["shock_end"]) + pd.DateOffset(months=1)).strftime("%Y-%m")
+        post1  = ext["ext_end"].strftime("%Y-%m")
+        sig_win = non_rw[(non_rw["Stat Post"] > 0) & (non_rw["Sig Post"].isin(["*", "**"]))]
+        drop_str = ", ".join(ext["dropped"]) or "—"
+
+        if len(sig_win) > 0:
+            verdict_de = (f"schlagen **{', '.join(sig_win.index)}** den RW signifikant "
+                          f"(DM/CW p<0,10; bestes {best_p}, RMSE/RW={val_p:.2f})")
+            verdict_en = (f"**{', '.join(sig_win.index)}** beat the RW significantly "
+                          f"(DM/CW p<0.10; best {best_p}, RMSE/RW={val_p:.2f})")
+        elif val_p < 1.0:
+            verdict_de = (f"unterbietet das beste Modell ({best_p}) den RW in der "
+                          f"Punktschätzung (RMSE/RW={val_p:.2f}), aber **nicht signifikant** (DM/CW n.s.)")
+            verdict_en = (f"the best model ({best_p}) edges below the RW in point terms "
+                          f"(RMSE/RW={val_p:.2f}), but **not significantly** (DM/CW n.s.)")
+        else:
+            verdict_de = (f"schlägt **weiterhin kein Modell** den RW (bestes {best_p}, "
+                          f"RMSE/RW={val_p:.2f})")
+            verdict_en = (f"**still no model** beats the RW (best {best_p}, RMSE/RW={val_p:.2f})")
+
+        ext_de = (
+            f"\n\n**Robustheit Sample-Verlängerung (AP32):** Entfernt man die einzige "
+            f"bindende Reihe (`{drop_str}`, endet 2024-09), reicht das OOS-Fenster bis "
+            f"**{post1}** (+{ext['months_gained']} Monate; Post-Schock-Segment "
+            f"{post0}–{post1}, n={ext['n_post']}, vorher 14). Im ruhigeren Post-Schock-"
+            f"Regime {verdict_de}. → Die These *RW unschlagbar* ist damit erstmals "
+            f"out-of-sample außerhalb des Energiepreisschocks geprüft. "
+            f"Tabelle: `results/robustness_extended.csv`."
+        )
+        ext_en = (
+            f"\n\n**Sample-extension robustness (AP32):** Dropping the single binding "
+            f"series (`{drop_str}`, ends 2024-09) extends the OOS window to **{post1}** "
+            f"(+{ext['months_gained']} months; post-shock segment {post0}–{post1}, "
+            f"n={ext['n_post']}, was 14). In the calmer post-shock regime {verdict_en}. "
+            f"→ The *RW-unbeatable* claim is thus tested out-of-sample outside the energy "
+            f"price shock for the first time. Table: `results/robustness_extended.csv`."
+        )
+        block_de += ext_de
+        block_en += ext_en
 
     _MARKER = re.compile(
         r"<!-- RESULTS:BEGIN -->.*?<!-- RESULTS:END -->", re.DOTALL

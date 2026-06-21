@@ -6,10 +6,12 @@ import pytest
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+from sklearn.model_selection import TimeSeriesSplit
+
 from src.evaluation import (
     bonferroni_correct, clark_west, compute_giacomini_rossi,
-    compute_regime_analysis, compute_robustness_mom,
-    compute_selection_by_regime,
+    compute_regime_analysis, compute_robustness_extended_oos,
+    compute_robustness_mom, compute_selection_by_regime,
     diebold_mariano, rolling_origin,
 )
 
@@ -401,3 +403,72 @@ def test_selection_by_regime_freq_in_unit_interval():
     assert (df >= 0).all().all() and (df <= 1).all().all(), (
         f"Häufigkeiten außerhalb [0,1]:\n{df}"
     )
+
+
+# ── Sample-Verlängerung / Post-Schock-OOS (AP32) ──────────────────────────────
+
+def _make_yoy_df(end="2025-08", early_end="2024-06", n_pred=3, seed=7):
+    """Synthetisches YoY-DataFrame mit einer früh endenden (bindenden) Reihe."""
+    idx = pd.date_range("2006-01-01", end, freq="MS")
+    rng = np.random.default_rng(seed)
+    T   = len(idx)
+    hvpi = 2.0 + np.cumsum(rng.normal(0, 0.05, T)) + rng.normal(0, 0.3, T)
+    data = {"HVPI": hvpi}
+    for i in range(n_pred):
+        data[f"P{i}"] = 0.4 * hvpi + rng.normal(0, 1.2, T)
+    df = pd.DataFrame(data, index=idx)
+    df["BS_early"] = rng.normal(0, 1.0, T)
+    df.loc[df.index > pd.Timestamp(early_end), "BS_early"] = np.nan  # bindende Reihe
+    return df
+
+
+# Schneller CV-Split für die Tests (statt config.TSCV mit n_splits=10)
+_FAST_TSCV = TimeSeriesSplit(n_splits=3, test_size=6)
+
+
+def test_extended_oos_output_structure():
+    """compute_robustness_extended_oos liefert DataFrame mit allen Schlüsselmodellen."""
+    df = _make_yoy_df()
+    res = compute_robustness_extended_oos(
+        df, drop_cols=("BS_early",), test_months=24, tscv=_FAST_TSCV,
+    )
+    assert "df_robustness_extended" in res
+    out = res["df_robustness_extended"]
+    assert isinstance(out, pd.DataFrame)
+    expected = {"RW", "AR", "OLS", "Ridge", "LASSO", "Elastic Net", "LASSO+HVPI"}
+    assert expected.issubset(set(out.index)), (
+        f"Fehlende Modelle: {expected - set(out.index)}"
+    )
+
+
+def test_extended_oos_extends_sample():
+    """Drop der bindenden Reihe verlängert das Sample (months_gained > 0)."""
+    df = _make_yoy_df(end="2025-08", early_end="2024-06")
+    res = compute_robustness_extended_oos(
+        df, drop_cols=("BS_early",), test_months=24, tscv=_FAST_TSCV,
+    )
+    assert res["months_gained"] > 0, "Sample sollte sich verlängern"
+    assert res["ext_end"] > res["orig_end"], "ext_end muss nach orig_end liegen"
+    assert res["dropped"] == ["BS_early"]
+
+
+def test_extended_oos_rw_self_reference():
+    """RW hat RMSE/RW = 1.0 in beiden Regimen und gesamt (Selbst-Referenz)."""
+    df = _make_yoy_df()
+    out = compute_robustness_extended_oos(
+        df, drop_cols=("BS_early",), test_months=24, tscv=_FAST_TSCV,
+    )["df_robustness_extended"]
+    for col in ["RMSE/RW Schock", "RMSE/RW Post", "RMSE/RW Gesamt"]:
+        assert np.isclose(out.loc["RW", col], 1.0, atol=1e-10), (
+            f"RW {col} sollte exakt 1.0 sein, got {out.loc['RW', col]}"
+        )
+
+
+def test_extended_oos_regime_partition_nonempty():
+    """Beide Regime-Segmente (Schock, Post-Schock) sind im Testfenster nicht leer."""
+    df = _make_yoy_df()
+    res = compute_robustness_extended_oos(
+        df, drop_cols=("BS_early",), test_months=24, tscv=_FAST_TSCV,
+    )
+    assert res["n_shock"] > 0, "Schock-Segment darf nicht leer sein"
+    assert res["n_post"] > 0, "Post-Schock-Segment darf nicht leer sein"

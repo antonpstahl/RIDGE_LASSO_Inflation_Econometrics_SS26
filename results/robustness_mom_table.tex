@@ -1,0 +1,17 @@
+\begin{table}
+\caption{Robustheitsprüfung MoM-Spezifikation (AP29): Rolling-Origin-RMSE ($h=1$, festes $\lambda$) für die HVPI-Monatsrate (Δ\,\%) statt der Jahresrate (YoY). AO: Atkeson-Ohanian-Benchmark --- rollierender 12-Monats-Mittelwert der MoM-Raten (Atkeson \& Ohanian 2001, \emph{AER} 91). RMSE/RW\,$<1$: Modell schlägt Random Walk; RMSE/AO\,$<1$: Modell schlägt AO-Benchmark. Der Befund \emph{kein Makro-Mehrwert über die Persistenz hinaus} ist robust gegenüber der Wahl YoY\,vs.\,MoM als Zielgröße.}
+\label{tab:robustheit_mom}
+\begin{tabular}{lrrr}
+\toprule
+ & Test RMSE & RMSE/RW & RMSE/AO \\
+Modell &  &  &  \\
+\midrule
+RW & 0.7343 & 1.0000 & 1.2199 \\
+AO (Atkeson-Ohanian) & 0.6020 & 0.8197 & 1.0000 \\
+AR & 0.6870 & 0.9356 & 1.1413 \\
+Ridge & 0.6084 & 0.8285 & 1.0107 \\
+LASSO & 0.6372 & 0.8677 & 1.0585 \\
+LASSO+HVPI & 0.6509 & 0.8863 & 1.0813 \\
+\bottomrule
+\end{tabular}
+\end{table}

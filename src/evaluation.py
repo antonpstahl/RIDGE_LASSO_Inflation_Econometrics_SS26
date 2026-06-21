@@ -1305,3 +1305,240 @@ def compute_selection_by_regime(X, y, train_end, lambda_lasso, shock_end=None):
         "n_shock_sel":    n_shock,
         "n_disfl_sel":    n_disfl,
     }
+
+
+# ── Sample-Verlängerung: Drop bindender Reihen + Post-Schock-OOS (AP32 / G6) ───
+
+def _seg_rmse_on(pred_series, idx, y_ref):
+    """RMSE einer Prognosereihe auf einem Zeitindex-Segment (ohne NaN)."""
+    p = pred_series.reindex(idx).dropna()
+    if len(p) == 0:
+        return np.nan
+    a = y_ref.loc[p.index]
+    return float(np.sqrt(np.mean((p.values - a.values) ** 2)))
+
+
+def compute_robustness_extended_oos(df_yoy, drop_cols=("BS_Produktionserwart",),
+                                    shock_end=None, test_months=TEST_MONTHS,
+                                    tscv=None):
+    """Robustheitslauf (AP32 / G6): Sample-Verlängerung + echter Post-Schock-OOS-Test.
+
+    Adressiert die strukturelle Trunkierung des Hauptlaufs: eine einzige Reihe
+    (`BS_Produktionserwart`, endet 2024-09) kappt die *gesamte* Feature-Matrix
+    bei 2024-10 — obwohl HVPI bis 2025-12 und die meisten Prädiktoren bis 2026-04
+    reichen (vgl. data_preparation.print_truncation_info). Dadurch ist das
+    Testfenster des Hauptlaufs vollständig vom Energie-Preisschock dominiert (das
+    zentrale Caveat der Arbeit) — und die These "RW unschlagbar" ist im ruhigen
+    Post-Schock-Regime nie sauber out-of-sample geprüft worden.
+
+    Dieser Lauf entfernt die bindende(n) Reihe(n), verlängert das OOS-Fenster nach
+    hinten (2024-10 → 2025-12, +14 Monate; Post-Schock-Fenster 14 → 28 Monate) und
+    prüft per Regime-Split (Schock vs. Post-Schock) UND Clark-West/DM-Test, ob die
+    Makro-Modelle den Random Walk in der ruhigeren Post-Schock-Phase schlagen.
+
+    Das Trainingsfenster bleibt identisch zum Hauptlauf (Ende 2021-05): der erste
+    OOS-Punkt bleibt `test_start` (2021-06), nur das Testfenster wächst nach hinten.
+    Das Schock-Segment ist damit direkt mit dem Hauptlauf (Regime-Tabelle) und der
+    feste λ-Lauf konsistent vergleichbar.
+
+    Parameters
+    ----------
+    df_yoy      : DataFrame, YoY-transformierte Reihen (inkl. der bindenden Reihe).
+    drop_cols   : Iterable[str], früh endende Reihen, die das Sample kappen.
+    shock_end   : str (z.B. "2023-03"); None → REGIME_SHOCK_END aus config.
+    test_months : int, OOS-Länge des Hauptlaufs (zur Lokalisierung von test_start).
+    tscv        : TimeSeriesSplit für die λ-CV (default: config.TSCV).
+
+    Returns
+    -------
+    dict mit:
+      'df_robustness_extended' : DataFrame (Modell × [RMSE/RMSE-RW je Segment + Post-Test])
+      'orig_end' / 'ext_end'   : letztes Zieldatum vorher/nachher (Timestamp)
+      'months_gained'          : Anzahl zusätzlich nutzbarer Monate
+      'n_shock' / 'n_post'     : OOS-Beobachtungen je Segment
+      'dropped'                : tatsächlich entfernte Spalten
+      'shock_end'              : verwendetes Trennmonats-Datum
+    """
+    from .data_preprocessing import prepare_splits
+    from .config import REGIME_SHOCK_END
+    if shock_end is None:
+        shock_end = REGIME_SHOCK_END
+    if tscv is None:
+        tscv = TSCV
+    drop_cols = [c for c in drop_cols if c in df_yoy.columns]
+    shock_ts  = pd.Timestamp(shock_end)
+
+    # ── (1) Ursprüngliches Testfenster lokalisieren (mit den bindenden Reihen) ──
+    _, y_trunc = build_feature_matrix(
+        df_yoy, lags=LAGS, forecast_horizon=1, test_months=test_months
+    )
+    test_start = y_trunc.index[-test_months]
+    orig_end   = y_trunc.index[-1]
+
+    # ── (2) Erweiterte Feature-Matrix ohne die bindenden Reihen ────────────────
+    df_ext = df_yoy.drop(columns=drop_cols)
+    X, y   = build_feature_matrix(
+        df_ext, lags=LAGS, forecast_horizon=1, test_months=test_months
+    )
+    ext_end = y.index[-1]
+    months_gained = ((ext_end.year - orig_end.year) * 12
+                     + ext_end.month - orig_end.month)
+
+    # Trainingsfenster identisch zum Hauptlauf → erster OOS-Punkt bleibt test_start
+    if test_start in y.index:
+        train_end = y.index.get_loc(test_start)
+    else:
+        train_end = int(y.index.searchsorted(test_start))
+
+    splits = prepare_splits(X, y, train_end, ar_lags=AR_LAGS)
+
+    print("\n" + "=" * 68)
+    print("Robustheitsprüfung: Sample-Verlängerung (AP32 / G6)")
+    print(f"Entfernte (bindende) Reihen: {', '.join(drop_cols) or '—'}")
+    print(f"Zielreihe bis:   {orig_end:%Y-%m} (vorher)  →  {ext_end:%Y-%m} (nachher)"
+          f"  [+{months_gained} Monate]")
+    print(f"Features:        {X.shape[1]} (nach Drop)")
+    print(f"OOS-Fenster:     {test_start:%Y-%m} – {ext_end:%Y-%m} "
+          f"(n={len(y) - train_end}, war {test_months})")
+    print("=" * 68)
+
+    # ── (3) Feste λ aus CV auf dem (zum Hauptlauf identischen) Trainingsfenster ─
+    X_train_s      = splits["X_train_s"]
+    y_train        = splits["y_train"]
+    X_plus_train_s = splits["X_plus_train_s"]
+    y_plus_train   = splits["y_plus_train"]
+
+    ridge_cv = RidgeCV(alphas=ALPHAS_RIDGE, cv=tscv,
+                       scoring="neg_mean_squared_error").fit(X_train_s, y_train)
+    lasso_cv = LassoCV(alphas=ALPHAS_LASSO, cv=tscv, max_iter=10000,
+                       n_jobs=-1).fit(X_train_s, y_train)
+    enet_cv  = ElasticNetCV(l1_ratio=L1_RATIOS_ENET, alphas=ALPHAS_LASSO,
+                            cv=tscv, max_iter=10000, n_jobs=-1).fit(X_train_s, y_train)
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        lasso_plus_cv = LassoCV(alphas=ALPHAS_LASSO, cv=tscv, max_iter=10000,
+                                n_jobs=-1).fit(X_plus_train_s, y_plus_train)
+
+    # ── (4) Rolling-Origin (festes λ) über das verlängerte Fenster ─────────────
+    X_ar = splits["X_ar"];   y_ar = splits["y_ar"];   start_ar   = splits["start_ar"]
+    X_plus = splits["X_plus"]; y_plus = splits["y_plus"]; start_plus = splits["start_plus"]
+
+    oos = {
+        "RW":          y.shift(1).iloc[train_end:].rename("RW"),
+        "AR":          rolling_origin(lambda: LinearRegression(), X_ar, y_ar,
+                                      start_ar, desc="AR (ext)").rename("AR"),
+        "OLS":         rolling_origin(lambda: LinearRegression(), X, y,
+                                      train_end, desc="OLS (ext)").rename("OLS"),
+        "Ridge":       rolling_origin(lambda: Ridge(alpha=ridge_cv.alpha_), X, y,
+                                      train_end, desc="Ridge (ext)").rename("Ridge"),
+        "LASSO":       rolling_origin(lambda: Lasso(alpha=lasso_cv.alpha_, max_iter=10000),
+                                      X, y, train_end, desc="LASSO (ext)").rename("LASSO"),
+        "Elastic Net": rolling_origin(lambda: ElasticNet(alpha=enet_cv.alpha_,
+                                      l1_ratio=enet_cv.l1_ratio_, max_iter=10000),
+                                      X, y, train_end, desc="EN (ext)").rename("Elastic Net"),
+        "LASSO+HVPI":  rolling_origin(lambda: Lasso(alpha=lasso_plus_cv.alpha_, max_iter=10000),
+                                      X_plus, y_plus, start_plus,
+                                      desc="LASSO+HVPI (ext)", suppress_fp=True).rename("LASSO+HVPI"),
+    }
+    oos_df    = pd.concat(oos.values(), axis=1)
+    y_oos_ref = y.iloc[train_end:]
+
+    common    = oos_df.index.intersection(y_oos_ref.index)
+    y_ref     = y_oos_ref.loc[common]
+    idx_shock = common[common <= shock_ts]
+    idx_post  = common[common >  shock_ts]
+    n_shock   = len(idx_shock)
+    n_post    = len(idx_post)
+
+    # ── (5) Regime-RMSE + Inferenz (Post-Schock-Segment = zentraler Test) ──────
+    rw_s = _seg_rmse_on(oos_df["RW"], idx_shock, y_ref)
+    rw_p = _seg_rmse_on(oos_df["RW"], idx_post,  y_ref)
+    rw_g = _seg_rmse_on(oos_df["RW"], common,    y_ref)
+
+    print(f"\nRegime-Split (Schock ≤ {shock_ts:%Y-%m} < Post-Schock):"
+          f"  n_Schock={n_shock}, n_Post={n_post}")
+    print(f"{'Modell':<14} {'RMSE_S':>8} {'R/RW_S':>8} {'RMSE_P':>8} {'R/RW_P':>8}"
+          f" {'R/RW_G':>8}  {'Post-Test':>14}")
+    print("-" * 78)
+
+    records = []
+    for col in oos_df.columns:
+        rs = _seg_rmse_on(oos_df[col], idx_shock, y_ref)
+        rp = _seg_rmse_on(oos_df[col], idx_post,  y_ref)
+        rg = _seg_rmse_on(oos_df[col], common,    y_ref)
+        rec = {
+            "Modell":          col,
+            "RMSE Schock":     round(rs, 4),
+            "RMSE/RW Schock":  round(rs / rw_s, 4) if rw_s > 0 else np.nan,
+            "RMSE Post":       round(rp, 4),
+            "RMSE/RW Post":    round(rp / rw_p, 4) if rw_p > 0 else np.nan,
+            "RMSE Gesamt":     round(rg, 4),
+            "RMSE/RW Gesamt":  round(rg / rw_g, 4) if rw_g > 0 else np.nan,
+        }
+        if col == "RW":
+            rec.update({"Test": "–", "Stat Post": np.nan,
+                        "p Post": np.nan, "Sig Post": "–"})
+            post_str = "     – (Ref)"
+        else:
+            preds_p = oos_df[col].reindex(idx_post).dropna()
+            e_mod_p = (preds_p - y_ref.loc[preds_p.index])
+            e_rw_p  = (oos_df["RW"].reindex(e_mod_p.index)
+                       - y_ref.loc[e_mod_p.index]).dropna()
+            e_mod_p = e_mod_p.loc[e_rw_p.index]
+            if col in _NESTED_MODELS_RO:
+                stat, pv   = clark_west(e_rw_p.values, e_mod_p.values, h=1)
+                test_label = "CW"
+            else:
+                stat, pv   = diebold_mariano(e_rw_p.values, e_mod_p.values, h=1)
+                test_label = "DM"
+            sig = "**" if pv < 0.05 else ("*" if pv < 0.10 else "n.s.")
+            rec.update({"Test": test_label, "Stat Post": round(float(stat), 3),
+                        "p Post": round(float(pv), 4), "Sig Post": sig})
+            post_str = f"{test_label} {stat:+.2f} {sig:>4}"
+        records.append(rec)
+        print(f"  {col:<12} {rs:>8.4f} {rec['RMSE/RW Schock']:>8.4f}"
+              f" {rp:>8.4f} {rec['RMSE/RW Post']:>8.4f}"
+              f" {rec['RMSE/RW Gesamt']:>8.4f}  {post_str:>14}")
+
+    print("-" * 78)
+    print(f"RW-RMSE: Schock={rw_s:.4f}  Post={rw_p:.4f}  Gesamt={rw_g:.4f}")
+    print("Post-Test: DM (HLN, zweiseitig) / CW (2007, einseitig, geschachtelt) vs. RW;"
+          " Stat>0 → Modell besser.")
+
+    df_ext_oos = pd.DataFrame(records).set_index("Modell")
+
+    # ── (6) Befunde ────────────────────────────────────────────────────────────
+    non_rw = df_ext_oos.drop("RW", errors="ignore")
+    best_p = non_rw["RMSE/RW Post"].idxmin()
+    beats_p_point = bool((non_rw["RMSE/RW Post"] < 1.0).any())
+    sig_winners = non_rw[(non_rw["Stat Post"] > 0) & (non_rw["Sig Post"].isin(["*", "**"]))]
+
+    print()
+    print(f"BEFUND Post-Schock ({(shock_ts + pd.DateOffset(months=1)):%Y-%m}–{ext_end:%Y-%m},"
+          f" n={n_post}):")
+    print(f"  Bestes Nicht-RW-Modell = {best_p} "
+          f"(RMSE/RW Post = {df_ext_oos.loc[best_p, 'RMSE/RW Post']:.4f})")
+    if beats_p_point:
+        winners = non_rw.index[non_rw["RMSE/RW Post"] < 1.0].tolist()
+        print(f"  → Punktschätzung: {', '.join(winners)} unterbieten den RW im Post-Schock-Fenster.")
+        if len(sig_winners) > 0:
+            print(f"  → SIGNIFIKANT (p<0.10): {', '.join(sig_winners.index)} schlagen den RW.")
+        else:
+            print("  → Aber: kein Modell schlägt den RW SIGNIFIKANT (DM/CW n.s.) — "
+                  f"auch bei n={n_post} bleibt die Power begrenzt.")
+    else:
+        print("  → Auch im verlängerten, ruhigeren Post-Schock-Fenster schlägt KEIN "
+              "Modell den RW (Punktschätzung).")
+    print("  Interpretation: Die These 'RW unschlagbar' ist damit erstmals echt "
+          "out-of-sample im Nicht-Schock-Regime geprüft — nicht mehr nur im "
+          "energiepreis-dominierten Hauptfenster.")
+
+    return {
+        "df_robustness_extended": df_ext_oos,
+        "orig_end":      orig_end,
+        "ext_end":       ext_end,
+        "months_gained": int(months_gained),
+        "n_shock":       n_shock,
+        "n_post":        n_post,
+        "dropped":       list(drop_cols),
+        "shock_end":     shock_end,
+    }

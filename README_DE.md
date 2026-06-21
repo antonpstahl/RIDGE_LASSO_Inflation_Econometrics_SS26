@@ -127,6 +127,8 @@ Inferenztests (T=36): DM = Diebold-Mariano (HLN-korr., zweiseitig) für reine Ma
 **Robustheitscheck (Rolling-Origin, Expanding Window):** RW 0.94 · AR 0.95 · LASSO+HVPI 0.95 ·
 LASSO 1.09 · Elastic Net 1.09 · Ridge 1.16 · OLS 2.34. Die geschachtelten Modelle (AR, LASSO+HVPI)
 erreichen den RW hier knapp, schlagen ihn aber nicht nachweisbar (Clark-West-Test n.s.).
+
+**Robustheit Sample-Verlängerung (AP32):** Entfernt man die einzige bindende Reihe (`BS_Produktionserwart`, endet 2024-09), reicht das OOS-Fenster bis **2025-12** (+14 Monate; Post-Schock-Segment 2023-04–2025-12, n=28, vorher 14). Im ruhigeren Post-Schock-Regime schlagen **AR, LASSO+HVPI** den RW signifikant (DM/CW p<0,10; bestes LASSO+HVPI, RMSE/RW=0.95). → Die These *RW unschlagbar* ist damit erstmals out-of-sample außerhalb des Energiepreisschocks geprüft. Tabelle: `results/robustness_extended.csv`.
 <!-- RESULTS:END -->
 
 ### Kernbefunde

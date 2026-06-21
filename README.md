@@ -125,6 +125,8 @@ Inference tests (T=36): DM = Diebold-Mariano (HLN-corrected, two-sided) for pure
 **Robustness check (Rolling-Origin, expanding window):** RW 0.94 · AR 0.95 · LASSO+HICP 0.95 ·
 LASSO 1.09 · Elastic Net 1.09 · Ridge 1.16 · OLS 2.34. The nested models (AR, LASSO+HICP)
 nearly match the RW here, but do not beat it significantly (Clark-West test n.s.).
+
+**Sample-extension robustness (AP32):** Dropping the single binding series (`BS_Produktionserwart`, ends 2024-09) extends the OOS window to **2025-12** (+14 months; post-shock segment 2023-04–2025-12, n=28, was 14). In the calmer post-shock regime **AR, LASSO+HVPI** beat the RW significantly (DM/CW p<0.10; best LASSO+HVPI, RMSE/RW=0.95). → The *RW-unbeatable* claim is thus tested out-of-sample outside the energy price shock for the first time. Table: `results/robustness_extended.csv`.
 <!-- RESULTS:END -->
 
 ### Key findings
