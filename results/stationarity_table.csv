@@ -9,5 +9,5 @@ BS (Konjunkturklima),Niveau,-4.763,0.0001,I(0),0.162,0.1,I(0),stationär
 BS (Konjunkturklima),YoY (%),-18.278,0.0,I(0),0.161,0.1,I(0),stationär
 ALQ (Gesamt),Niveau,-0.837,0.808,I(1)?,2.342,0.01,I(1)?,nicht-stationär
 ALQ (Gesamt),YoY (%),-3.381,0.0116,I(0),0.279,0.1,I(0),stationär
-LCI (Lohnkosten BN),Niveau,2.375,0.999,I(1)?,2.769,0.01,I(1)?,nicht-stationär
-LCI (Lohnkosten BN),YoY (%),-2.931,0.0418,I(0),0.87,0.01,I(1)?,unklar/persistent
+LCI (Lohnkosten BN),Niveau,-0.601,0.8708,I(1)?,2.8,0.01,I(1)?,nicht-stationär
+LCI (Lohnkosten BN),YoY (%),-2.453,0.1273,I(1)?,0.539,0.033,I(1)?,nicht-stationär
