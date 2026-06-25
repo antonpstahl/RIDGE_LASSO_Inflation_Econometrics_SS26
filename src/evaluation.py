@@ -267,6 +267,7 @@ def compute_compare_oos(oos_ctx, adap_ctx, y_oos_ref):
 
     rw_rmse_ref = oos_ctx["oos_rmse"]["RW"]
     adap_rmse = {}
+    rows = []
     print("\nRolling-Origin RMSE: festes λ vs. adaptives λ je Origin")
     print(f"{'Modell':<25} {'RMSE':>7}  {'RMSE/RW':>8}")
     print("-" * 45)
@@ -275,10 +276,22 @@ def compute_compare_oos(oos_ctx, adap_ctx, y_oos_ref):
         a    = y_oos_ref.loc[p.index]
         rmse = np.sqrt(mean_squared_error(a, p))
         adap_rmse[col] = rmse
-        marker = " ◀ adapt." if "(adapt.)" in col else ""
+        is_adap = "(adapt.)" in col
+        marker = " ◀ adapt." if is_adap else ""
         print(f"  {col:<23} {rmse:>7.4f}  {rmse/rw_rmse_ref:>8.4f}{marker}")
+        rows.append({
+            "Modell":   col,
+            "lambda":   "adaptiv" if is_adap else "fest",
+            "RMSE":     round(rmse, 4),
+            "RMSE/RW":  round(rmse / rw_rmse_ref, 4),
+        })
 
-    return dict(compare_oos=compare_oos, adap_rmse=adap_rmse)
+    df_compare = pd.DataFrame(rows)
+    df_compare.to_csv("results/compare_oos_table.csv", index=False)
+    print("\nVergleichstabelle gespeichert: results/compare_oos_table.csv")
+
+    return dict(compare_oos=compare_oos, adap_rmse=adap_rmse,
+                df_compare=df_compare)
 
 
 # ── Regime-Analyse (Schock vs. Disinflation) ─────────────────────────────────
