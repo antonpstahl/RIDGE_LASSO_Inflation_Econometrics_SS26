@@ -1517,13 +1517,30 @@ def compute_robustness_extended_oos(df_yoy, drop_cols=("BS_Produktionserwart",),
     print("Post-Test: DM (HLN, zweiseitig) / CW (2007, einseitig, geschachtelt) vs. RW;"
           " Stat>0 → Modell besser.")
 
+    # ── (5b) Bonferroni über die parallelen Post-Tests (konsistent zur Haupttabelle) ──
+    # Die Einzelfenster-Inferenz (compute_dm_tests / inference_table) korrigiert für
+    # Mehrfachtests; dieselbe Korrektur wird hier über die parallelen Post-Tests
+    # angewandt, damit der Post-Schock-Befund nicht durch das Weglassen der Korrektur
+    # entsteht (vermeidet selektive Bonferroni-Behandlung des einzigen Positivbefunds).
+    p_post_raw   = [r["p Post"] for r in records]
+    n_tests_post = int(np.sum(~np.isnan(np.asarray(p_post_raw, dtype=float))))
+    for rec, p_adj in zip(records, bonferroni_correct(p_post_raw)):
+        if np.isnan(p_adj):
+            rec["p adj. Post"]   = np.nan
+            rec["Sig Post adj."] = "–"
+        else:
+            rec["p adj. Post"]   = round(float(p_adj), 4)
+            rec["Sig Post adj."] = "**" if p_adj < 0.05 else ("*" if p_adj < 0.10 else "n.s.")
+    print(f"Bonferroni (Post-Segment, konsistent zur Haupttabelle): "
+          f"{n_tests_post} parallele Tests; p_adj = min({n_tests_post}·p, 1).")
+
     df_ext_oos = pd.DataFrame(records).set_index("Modell")
 
     # ── (6) Befunde ────────────────────────────────────────────────────────────
     non_rw = df_ext_oos.drop("RW", errors="ignore")
     best_p = non_rw["RMSE/RW Post"].idxmin()
     beats_p_point = bool((non_rw["RMSE/RW Post"] < 1.0).any())
-    sig_winners = non_rw[(non_rw["Stat Post"] > 0) & (non_rw["Sig Post"].isin(["*", "**"]))]
+    sig_winners = non_rw[(non_rw["Stat Post"] > 0) & (non_rw["Sig Post adj."].isin(["*", "**"]))]
 
     print()
     print(f"BEFUND Post-Schock ({(shock_ts + pd.DateOffset(months=1)):%Y-%m}–{ext_end:%Y-%m},"
@@ -1534,9 +1551,11 @@ def compute_robustness_extended_oos(df_yoy, drop_cols=("BS_Produktionserwart",),
         winners = non_rw.index[non_rw["RMSE/RW Post"] < 1.0].tolist()
         print(f"  → Punktschätzung: {', '.join(winners)} unterbieten den RW im Post-Schock-Fenster.")
         if len(sig_winners) > 0:
-            print(f"  → SIGNIFIKANT (p<0.10): {', '.join(sig_winners.index)} schlagen den RW.")
+            print(f"  → SIGNIFIKANT nach Bonferroni (p_adj<0.10): "
+                  f"{', '.join(sig_winners.index)} schlagen den RW.")
         else:
-            print("  → Aber: kein Modell schlägt den RW SIGNIFIKANT (DM/CW n.s.) — "
+            print("  → Unkorrigiert erreichen AR/LASSO+HVPI p<0.05; nach Bonferroni-"
+                  "Korrektur schlägt aber KEIN Modell den RW signifikant (p_adj n.s.) — "
                   f"auch bei n={n_post} bleibt die Power begrenzt.")
     else:
         print("  → Auch im verlängerten, ruhigeren Post-Schock-Fenster schlägt KEIN "

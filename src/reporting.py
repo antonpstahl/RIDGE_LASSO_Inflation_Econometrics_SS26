@@ -671,10 +671,13 @@ def export_robustness_table(df_robustness_mom):
             r"statt der Jahresrate (YoY). "
             r"AO: Atkeson-Ohanian-Benchmark --- rollierender 12-Monats-Mittelwert "
             r"der MoM-Raten (Atkeson \& Ohanian 2001, \emph{AER} 91). "
-            r"RMSE/RW\,$<1$: Modell schlägt Random Walk; "
-            r"RMSE/AO\,$<1$: Modell schlägt AO-Benchmark. "
+            r"RMSE/RW\,$<1$: Modell unterschreitet den RW im RMSE; "
+            r"RMSE/AO\,$<1$: Modell unterschreitet den AO-Benchmark im RMSE. "
+            r"In der MoM-Spezifikation ist der RW ein schwacher Benchmark, den "
+            r"alle Makromodelle unterschreiten; maßgeblich ist der AO-Benchmark "
+            r"(reine Persistenz), den kein Modell unterschreitet. "
             r"Der Befund \emph{kein Makro-Mehrwert über die Persistenz hinaus} "
-            r"ist robust gegenüber der Wahl YoY\,vs.\,MoM als Zielgröße."
+            r"ist damit robust gegenüber der Wahl YoY\,vs.\,MoM als Zielgröße."
         ),
         label="tab:robustheit_mom",
     )
@@ -693,14 +696,20 @@ def export_robustness_extended_table(ext_ctx):
     dropped   = ", ".join(ext_ctx["dropped"]) or "—"
     post_start = (pd.Timestamp(ext_ctx["shock_end"])
                   + pd.DateOffset(months=1)).strftime("%Y-%m")
-    df_tex = df.rename(columns={
+    n_post_tests = int(df["p Post"].notna().sum())
+    tex_cols = ["RMSE Schock", "RMSE/RW Schock", "RMSE Post", "RMSE/RW Post",
+                "RMSE Gesamt", "RMSE/RW Gesamt", "Test", "Stat Post",
+                "p Post", "p adj. Post", "Sig Post adj."]
+    df_tex = df[tex_cols].rename(columns={
         "RMSE/RW Schock": r"RMSE/RW$_{S}$", "RMSE/RW Post": r"RMSE/RW$_{P}$",
         "RMSE/RW Gesamt": r"RMSE/RW$_{G}$", "Stat Post": "Stat$_P$",
-        "p Post": r"$p_P$", "Sig Post": "Sig$_P$",
+        "p Post": r"$p_P$", "p adj. Post": r"$p_P^{\mathrm{adj}}$",
+        "Sig Post adj.": "Sig$_P$",
     })
     latex_str = df_tex.to_latex(
         float_format="%.4f",
         escape=False,
+        na_rep="–",
         caption=(
             r"Robustheit Sample-Verlängerung (AP32): Rolling-Origin-RMSE ($h=1$, "
             r"festes $\lambda$) nach Entfernen der bindenden Reihe \texttt{"
@@ -713,7 +722,12 @@ def export_robustness_extended_table(ext_ctx):
             r"\emph{RW unschlagbar} erstmals out-of-sample im Nicht-Schock-Regime. "
             r"Index $S$: Schock, $P$: Post-Schock, $G$: gesamt. "
             r"Post-Test: DM (HLN, zweiseitig) bzw. CW (2007, einseitig, geschachtelt) "
-            r"vs. RW; Stat$_P>0$ und Sig$_P\in\{*,**\}$ → Modell schlägt RW signifikant."
+            r"vs. RW. $p_P^{\mathrm{adj}}$: Bonferroni-Korrektur über die "
+            + str(n_post_tests) + r" parallelen Post-Tests, konsistent zur "
+            r"Einzelfenster-Inferenz (\cref{tab:inferenz}); Sig$_P$ bezieht sich auf "
+            r"$p_P^{\mathrm{adj}}$ (* $p<0{,}10$, ** $p<0{,}05$). Unkorrigiert "
+            r"erreichen AR und LASSO+HVPI $p_P<0{,}05$, nach Korrektur ist jedoch "
+            r"kein Modell mehr auf dem 5\,\%-Niveau signifikant."
         ),
         label="tab:robustheit_extended",
     )
@@ -819,10 +833,12 @@ def export_regime_table(df_regime, shock_end="2023-03", n_shock=None, n_disfl=No
             r"Schock: Energie-Preisschock (steigend/Peak, 2021-06--" + shock_end + r"). "
             r"Disinflation: " + disfl_start + r"--2024-10. "
             + n_info
-            + r"RMSE/RW $< 1$: Modell schlägt den Random Walk; "
+            + r"RMSE/RW $< 1$: Modell unterschreitet den RW im RMSE; "
             r"RMSE/RW $= 1{,}00$: Referenz (RW). "
-            r"Kein Modell schlägt den RW in einem der beiden Regime — "
-            r"die Aussage ist nicht auf das Energiepreis-Schock-Regime beschränkt."
+            r"Kein Modell schlägt den RW in einem der beiden Regime \emph{signifikant}; "
+            r"im Disinflationsregime unterschreiten ihn AR und LASSO+HVPI zwar im "
+            r"Punkt-RMSE (je $0{,}92$), ohne statistische Signifikanz. "
+            r"Die Aussage ist nicht auf das Energiepreis-Schock-Regime beschränkt."
         ),
         label="tab:regime",
     )
